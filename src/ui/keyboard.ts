@@ -1,17 +1,17 @@
 import type { KeyEvent } from '@opentui/core'
-import type { Pane, ArticleViewMode } from './state.ts'
+import type { ViewMode } from './state.ts'
 
 export type Action =
   | 'navDown'
   | 'navUp'
-  | 'navLeft'
-  | 'navRight'
   | 'select'
+  | 'goBack'
   | 'quit'
   | 'refresh'
   | 'markRead'
   | 'star'
-  | 'goBack'
+  | 'toggleSidebar'
+  | 'toggleZenMode'
 
 export interface KeyBinding {
   key: string
@@ -23,16 +23,18 @@ const DEFAULT_KEYBINDINGS: KeyBinding[] = [
   { key: 'down', action: 'navDown' },
   { key: 'k', action: 'navUp' },
   { key: 'up', action: 'navUp' },
-  { key: 'h', action: 'navLeft' },
-  { key: 'left', action: 'navLeft' },
-  { key: 'l', action: 'navRight' },
-  { key: 'right', action: 'navRight' },
+  { key: 'l', action: 'select' },
+  { key: 'right', action: 'select' },
   { key: 'enter', action: 'select' },
+  { key: 'h', action: 'goBack' },
+  { key: 'left', action: 'goBack' },
+  { key: 'escape', action: 'goBack' },
   { key: 'q', action: 'quit' },
   { key: 'r', action: 'refresh' },
   { key: 'm', action: 'markRead' },
   { key: 's', action: 'star' },
-  { key: 'escape', action: 'goBack' },
+  { key: '\\', action: 'toggleSidebar' },
+  { key: 'z', action: 'toggleZenMode' },
 ]
 
 export class KeyboardHandler {
@@ -82,25 +84,12 @@ export class KeyboardHandler {
   }
 }
 
-export function resolveActionForContext(
-  action: Action,
-  pane: Pane,
-  viewMode: ArticleViewMode
-): Action | null {
-  if (action === 'navRight') {
-    if (pane === 'feeds') return 'select'
+export function resolveActionForContext(action: Action, viewMode: ViewMode): Action | null {
+  if (action === 'select' && viewMode === 'reader') {
     return null
   }
 
-  if (action === 'navLeft') {
-    if (pane === 'articles' && viewMode === 'detail') return 'goBack'
-    if (pane === 'articles') return 'navLeft'
-    return null
-  }
-
-  if (action === 'goBack') {
-    if (pane === 'articles' && viewMode === 'detail') return 'goBack'
-    if (pane === 'articles') return 'navLeft'
+  if (action === 'goBack' && viewMode === 'feeds') {
     return null
   }
 
