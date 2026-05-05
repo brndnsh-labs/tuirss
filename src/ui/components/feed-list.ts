@@ -129,18 +129,11 @@ export class FeedList {
 
     for (const category of categories) {
       const isExpanded = state.expandedCategories.has(category.id)
-      const isCategorySelected = state.selectedCategory === category.id
 
       if (content) content += '\n'
 
       const expandIcon = isExpanded ? '▼' : '▶'
-      const prefix = isCategorySelected && !isExpanded ? '▸ ' : '  '
-
-      if (isCategorySelected && !isExpanded) {
-        content += prefix + expandIcon + ' '
-      } else {
-        content += prefix + expandIcon + ' '
-      }
+      content += '  ' + expandIcon + ' '
 
       content += category.label
 

@@ -44,6 +44,8 @@ export class App {
   private mainArea!: BoxRenderable
 
   private syncInterval: ReturnType<typeof setInterval> | null = null
+  private unsubscribeState: (() => void) | null = null
+  private unsubscribeDebug: (() => void) | null = null
   private destroyed = false
   private initialFeedLoaded = false
 
@@ -90,7 +92,7 @@ export class App {
 
     const debugPath = process.env.DEBUG_PATH || '/tmp/tuirss-state.json'
 
-    this.state.subscribe((state: AppState) => {
+    this.unsubscribeDebug = this.state.subscribe((state: AppState) => {
       const debugInfo = {
         timestamp: new Date().toISOString(),
         viewMode: state.viewMode,
@@ -270,7 +272,7 @@ export class App {
   }
 
   private setupStateListener(): void {
-    this.state.subscribe((state: AppState) => {
+    this.unsubscribeState = this.state.subscribe((state: AppState) => {
       this.render(state)
     })
   }
@@ -829,6 +831,12 @@ export class App {
     this.destroyed = true
     if (this.syncInterval) {
       clearInterval(this.syncInterval)
+    }
+    if (this.unsubscribeState) {
+      this.unsubscribeState()
+    }
+    if (this.unsubscribeDebug) {
+      this.unsubscribeDebug()
     }
     this.cache.close()
     this.renderer.destroy()

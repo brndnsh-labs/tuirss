@@ -25,14 +25,11 @@ export interface AppState {
 
   zenMode: boolean
 
-  readerScrollY: number
-
   searchQuery: string
   isSearching: boolean
   filteredArticles: Article[]
 
   expandedCategories: Set<string>
-  selectedCategory: string | null
 
   articlesPage: number
   hasMoreArticles: boolean
@@ -58,12 +55,10 @@ export function createInitialState(): AppState {
     terminalWidth: 120,
     terminalHeight: 30,
     zenMode: false,
-    readerScrollY: 0,
     searchQuery: '',
     isSearching: false,
     filteredArticles: [],
     expandedCategories: new Set(['__all__']),
-    selectedCategory: null,
 
     articlesPage: 0,
     hasMoreArticles: true,
