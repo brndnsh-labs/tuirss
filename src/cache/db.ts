@@ -1,10 +1,10 @@
-import Database from 'better-sqlite3'
+import { Database } from 'bun:sqlite'
 import { join } from 'path'
 import { getDataDir } from '../config/index.ts'
 import type { Feed, Article } from '../api/types.ts'
 
 export class Cache {
-  private db: Database.Database
+  private db: Database
 
   constructor(dbPath?: string) {
     const path = dbPath || join(getDataDir(), 'cache.db')
@@ -48,76 +48,69 @@ export class Cache {
   }
 
   saveFeeds(feeds: Feed[]): void {
-    const stmt = this.db.prepare(`
+    const insert = this.db.query(`
       INSERT OR REPLACE INTO feeds 
       (id, title, url, html_url, category_id, category_name, unread_count, last_updated)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
-    const insert = this.db.transaction((items: Feed[]) => {
-      for (const feed of items) {
-        stmt.run(
-          feed.id,
-          feed.title,
-          feed.url,
-          feed.htmlUrl,
-          feed.categories[0]?.id || null,
-          feed.categories[0]?.label || null,
-          feed.unreadCount || 0,
-          Date.now()
-        )
-      }
-    })
-
-    insert(feeds)
+    for (const feed of feeds) {
+      insert.run(
+        feed.id,
+        feed.title,
+        feed.url,
+        feed.htmlUrl,
+        feed.categories[0]?.id || null,
+        feed.categories[0]?.label || null,
+        feed.unreadCount || 0,
+        Date.now()
+      )
+    }
   }
 
   getFeeds(): Feed[] {
-    const rows = this.db.prepare('SELECT * FROM feeds ORDER BY title').all()
-    return rows.map((row: any) => ({
-      id: row.id,
-      title: row.title,
-      url: row.url,
-      htmlUrl: row.html_url,
-      categories: row.category_id ? [{ id: row.category_id, label: row.category_name }] : [],
-      unreadCount: row.unread_count,
+    const query = this.db.query('SELECT * FROM feeds ORDER BY title')
+    const rows = query.all() as Array<Record<string, unknown>>
+    return rows.map((row) => ({
+      id: row.id as string,
+      title: row.title as string,
+      url: row.url as string,
+      htmlUrl: row.html_url as string,
+      categories: row.category_id ? [{ id: row.category_id as string, label: row.category_name as string }] : [],
+      unreadCount: row.unread_count as number,
     }))
   }
 
   saveArticles(articles: Article[]): void {
-    const stmt = this.db.prepare(`
+    const insert = this.db.query(`
       INSERT OR REPLACE INTO articles 
       (id, feed_id, title, author, content, summary, url, published_at, is_read, is_starred, fetched_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
-    const insert = this.db.transaction((items: Article[]) => {
-      for (const article of items) {
-        const isRead = article.categories.includes('user/-/state/com.google/read')
-        const isStarred = article.categories.includes('user/-/state/com.google/starred')
+    for (const article of articles) {
+      const isRead = article.categories.includes('user/-/state/com.google/read')
+      const isStarred = article.categories.includes('user/-/state/com.google/starred')
 
-        stmt.run(
-          article.id,
-          article.origin.streamId,
-          article.title,
-          article.author || null,
-          article.content || null,
-          article.summary || null,
-          article.alternate[0]?.href || null,
-          article.published,
-          isRead,
-          isStarred,
-          Date.now()
-        )
-      }
-    })
-
-    insert(articles)
+      insert.run(
+        article.id,
+        article.origin.streamId,
+        article.title,
+        article.author || null,
+        article.content || null,
+        article.summary || null,
+        article.alternate[0]?.href || null,
+        article.published,
+        isRead ? 1 : 0,
+        isStarred ? 1 : 0,
+        Date.now()
+      )
+    }
   }
 
   getArticles(feedId?: string, unreadOnly?: boolean): Article[] {
     let sql = 'SELECT * FROM articles'
-    const params: any[] = []
+    const params: (string | number)[] = []
     const conditions: string[] = []
 
     if (feedId) {
@@ -126,7 +119,7 @@ export class Cache {
     }
 
     if (unreadOnly) {
-      conditions.push('is_read = FALSE')
+      conditions.push('is_read = 0')
     }
 
     if (conditions.length > 0) {
@@ -135,32 +128,35 @@ export class Cache {
 
     sql += ' ORDER BY published_at DESC'
 
-    const rows = this.db.prepare(sql).all(...params)
-    return rows.map((row: any) => this.rowToArticle(row))
+    const query = this.db.query(sql)
+    const rows = params.length > 0 
+      ? query.all(...params) as Array<Record<string, unknown>>
+      : query.all() as Array<Record<string, unknown>>
+    return rows.map((row) => this.rowToArticle(row))
   }
 
   getArticle(id: string): Article | null {
-    const row = this.db.prepare('SELECT * FROM articles WHERE id = ?').get(id)
+    const row = this.db.query('SELECT * FROM articles WHERE id = ?').get(id) as Record<string, unknown> | null
     if (!row) return null
-    return this.rowToArticle(row as any)
+    return this.rowToArticle(row)
   }
 
-  private rowToArticle(row: any): Article {
+  private rowToArticle(row: Record<string, unknown>): Article {
     const categories = ['user/-/state/com.google/reading-list']
     if (row.is_read) categories.push('user/-/state/com.google/read')
     if (row.is_starred) categories.push('user/-/state/com.google/starred')
 
     return {
-      id: row.id,
-      title: row.title,
-      published: row.published_at,
-      content: row.content || '',
-      summary: row.summary,
-      author: row.author,
-      alternate: row.url ? [{ href: row.url, type: 'text/html' }] : [],
+      id: row.id as string,
+      title: row.title as string,
+      published: row.published_at as number,
+      content: (row.content as string) || '',
+      summary: row.summary as string,
+      author: row.author as string,
+      alternate: row.url ? [{ href: row.url as string, type: 'text/html' }] : [],
       categories,
       origin: {
-        streamId: row.feed_id,
+        streamId: row.feed_id as string,
         title: '',
         htmlUrl: '',
       },
@@ -168,11 +164,11 @@ export class Cache {
   }
 
   markAsRead(id: string, read: boolean): void {
-    this.db.prepare('UPDATE articles SET is_read = ? WHERE id = ?').run(read, id)
+    this.db.query('UPDATE articles SET is_read = ? WHERE id = ?').run(read ? 1 : 0, id)
   }
 
   markAsStarred(id: string, starred: boolean): void {
-    this.db.prepare('UPDATE articles SET is_starred = ? WHERE id = ?').run(starred, id)
+    this.db.query('UPDATE articles SET is_starred = ? WHERE id = ?').run(starred ? 1 : 0, id)
   }
 
   close(): void {

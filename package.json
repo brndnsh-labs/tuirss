@@ -14,7 +14,6 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
     "@types/bun": "latest",
     "@types/node": "latest"
   },
@@ -23,7 +22,6 @@
   },
   "dependencies": {
     "@opentui/core": "^0.2.2",
-    "better-sqlite3": "^12.9.0",
     "smol-toml": "^1.6.1",
     "zod": "^4.4.3"
   }
