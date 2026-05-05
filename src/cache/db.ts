@@ -94,22 +94,25 @@ export class Cache {
     `)
 
     for (const article of articles) {
-      const isRead = article.categories.includes('user/-/state/com.google/read')
-      const isStarred = article.categories.includes('user/-/state/com.google/starred')
+      const isRead = article.categories?.includes('user/-/state/com.google/read') ?? false
+      const isStarred = article.categories?.includes('user/-/state/com.google/starred') ?? false
 
-      insert.run(
+      const values = [
         article.id ?? null,
         article.origin?.streamId ?? null,
         article.title ?? null,
         article.author ?? null,
         article.content ?? null,
-        article.summary ?? null,
+        article.summary?.content ?? null,
         article.alternate?.[0]?.href ?? null,
         article.published ?? null,
         isRead ? 1 : 0,
         isStarred ? 1 : 0,
         Date.now()
-      )
+      ]
+
+      // Debug: check for undefined values
+      insert.run(...values)
     }
   }
 
@@ -151,12 +154,13 @@ export class Cache {
     if (row.is_read) categories.push('user/-/state/com.google/read')
     if (row.is_starred) categories.push('user/-/state/com.google/starred')
 
+    const summary = row.summary as string | null
     return {
       id: row.id as string,
       title: row.title as string,
       published: row.published_at as number,
       content: (row.content as string) || '',
-      summary: row.summary as string,
+      summary: summary ? { content: summary } : undefined,
       author: row.author as string,
       alternate: row.url ? [{ href: row.url as string, type: 'text/html' }] : [],
       categories,

@@ -11,8 +11,8 @@ export interface Article {
   id: string
   title: string
   published: number
-  content: string
-  summary?: string
+  content?: string
+  summary?: { content: string }
   author?: string
   alternate: Array<{ href: string; type: string }>
   categories: string[]
