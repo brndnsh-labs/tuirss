@@ -1,0 +1,52 @@
+# TUIRSS Configuration File
+# Copy this to ~/.config/tuirss/config.toml and fill in your details
+
+[server]
+# Your FreshRSS instance URL
+# Should end with /api/ (e.g., http://docker01:8080/api/)
+url = "http://docker01:8080/api/"
+
+# Your FreshRSS username
+username = "your-username"
+
+# Your FreshRSS API password (set in FreshRSS Profile settings)
+# This is NOT your regular login password
+password = "your-api-password"
+
+[sync]
+# How often to sync feeds (in seconds)
+# Default: 300 (5 minutes)
+interval = 300
+
+# How long to keep articles in local cache (in days)
+# Older articles will be cleaned up automatically
+# Default: 30
+retention_days = 30
+
+[ui]
+# Width of the feed/article list panel
+# Can be a number (columns) or percentage string like "30%"
+# Default: 40
+list_width = 40
+
+# Show unread counts next to feed names
+# Default: true
+show_unread_counts = true
+
+# Date format for article timestamps
+# Uses strftime format codes
+# Default: "%Y-%m-%d %H:%M"
+date_format = "%Y-%m-%d %H:%M"
+
+[keybindings]
+# Navigation (vim-style by default)
+nav_down = "j"      # Move down
+nav_up = "k"        # Move up
+nav_left = "h"      # Go back / focus left panel
+nav_right = "l"     # Select / focus right panel
+
+# Actions
+mark_read = "m"     # Toggle read/unread
+star = "s"          # Toggle star
+refresh = "r"       # Sync feeds
+quit = "q"          # Quit application
