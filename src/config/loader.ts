@@ -1,12 +1,10 @@
 import { parse } from 'smol-toml'
-import { Config, configSchema, defaultConfig } from './schema.ts'
+import type { Config } from './schema.ts'
+import { configSchema, defaultConfig } from './schema.ts'
 import { existsSync, readFileSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
 
-/**
- * Get the default config directory path (XDG compliant)
- */
 export function getConfigDir(): string {
   const xdgConfig = process.env.XDG_CONFIG_HOME
   if (xdgConfig) {
@@ -15,16 +13,10 @@ export function getConfigDir(): string {
   return join(homedir(), '.config', 'tuirss')
 }
 
-/**
- * Get the default config file path
- */
 export function getConfigPath(): string {
   return join(getConfigDir(), 'config.toml')
 }
 
-/**
- * Get the default data directory path (XDG compliant)
- */
 export function getDataDir(): string {
   const xdgData = process.env.XDG_DATA_HOME
   if (xdgData) {
@@ -33,9 +25,13 @@ export function getDataDir(): string {
   return join(homedir(), '.local', 'share', 'tuirss')
 }
 
-/**
- * Load and validate configuration from TOML file
- */
+interface ParsedToml {
+  server?: Record<string, string>
+  sync?: Record<string, number>
+  ui?: Record<string, unknown>
+  keybindings?: Record<string, string>
+}
+
 export function loadConfig(configPath?: string): Config {
   const path = configPath || getConfigPath()
   
@@ -50,28 +46,24 @@ export function loadConfig(configPath?: string): Config {
   
   try {
     const content = readFileSync(path, 'utf-8')
-    const parsed = parse(content)
+    const parsed = parse(content) as ParsedToml
     
-    // Merge with defaults
-    const merged = {
-      ...defaultConfig,
-      ...parsed,
-      server: { ...defaultConfig.server, ...parsed.server },
-      sync: { ...defaultConfig.sync, ...parsed.sync },
-      ui: { ...defaultConfig.ui, ...parsed.ui },
-      keybindings: { ...defaultConfig.keybindings, ...parsed.keybindings },
+    const merged: Config = {
+      server: { ...defaultConfig.server, ...(parsed.server || {}) },
+      sync: { ...defaultConfig.sync, ...(parsed.sync || {}) },
+      ui: { ...defaultConfig.ui, ...(parsed.ui || {}) },
+      keybindings: { ...defaultConfig.keybindings, ...(parsed.keybindings || {}) },
     }
     
-    // Validate with Zod
     const result = configSchema.safeParse(merged)
     
     if (!result.success) {
-      const errors = result.error.errors.map(e => 
+      const issues = result.error.issues.map((e) => 
         `  - ${e.path.join('.')}: ${e.message}`
       ).join('\n')
       
       throw new ConfigError(
-        `Invalid configuration in ${path}:\n${errors}`
+        `Invalid configuration in ${path}:\n${issues}`
       )
     }
     
@@ -93,9 +85,6 @@ export function loadConfig(configPath?: string): Config {
   }
 }
 
-/**
- * Custom error class for configuration errors
- */
 export class ConfigError extends Error {
   constructor(message: string) {
     super(message)

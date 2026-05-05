@@ -1,5 +1,9 @@
 import type { Feed, Article, UnreadCount } from './types.ts'
 
+interface Headers {
+  [key: string]: string
+}
+
 export class FreshRSSClient {
   private baseUrl: string
   private username: string
@@ -36,10 +40,10 @@ export class FreshRSSClient {
       throw new Error('Login failed: No Auth token in response')
     }
 
-    this.authToken = authMatch[1]
+    this.authToken = authMatch[1] || null
   }
 
-  private authHeaders(): HeadersInit {
+  private authHeaders(): Headers {
     if (!this.authToken) {
       throw new Error('Not authenticated. Call login() first.')
     }
@@ -73,7 +77,7 @@ export class FreshRSSClient {
       throw new Error(`Failed to fetch feeds: ${response.status}`)
     }
 
-    const data = await response.json()
+    const data = await response.json() as { subscriptions?: Feed[] }
     return data.subscriptions || []
   }
 
@@ -87,7 +91,7 @@ export class FreshRSSClient {
       throw new Error(`Failed to fetch unread counts: ${response.status}`)
     }
 
-    const data = await response.json()
+    const data = await response.json() as { unreadcounts?: UnreadCount[] }
     return data.unreadcounts || []
   }
 
@@ -119,7 +123,7 @@ export class FreshRSSClient {
       throw new Error(`Failed to fetch articles: ${response.status}`)
     }
 
-    const data = await response.json()
+    const data = await response.json() as { items?: Article[]; continuation?: string }
     return {
       items: data.items || [],
       continuation: data.continuation,
