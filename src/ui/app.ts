@@ -4,13 +4,30 @@ import type { Config } from '../config/index.ts'
 import { FreshRSSClient } from '../api/index.ts'
 import type { Feed } from '../api/types.ts'
 import { Cache } from '../cache/index.ts'
-import { StateManager, getSelectedFeed, getSelectedArticle } from './state.ts'
-import type { AppState } from './state.ts'
+import {
+  StateManager,
+  getSelectedFeed,
+  getSelectedArticle,
+  getNextViewMode,
+  getPreviousViewMode,
+} from './state.ts'
+import type { AppState, ViewMode, LayoutMode } from './state.ts'
 import { KeyboardHandler, resolveActionForContext } from './keyboard.ts'
 import type { Action } from './keyboard.ts'
 import { FeedList } from './components/feed-list.ts'
 import { ArticleView } from './components/article-view.ts'
 import { StatusBar } from './components/status-bar.ts'
+
+const LAYOUT_BREAKPOINTS = {
+  narrow: 100,
+  wide: 140,
+}
+
+const SIDEBAR_WIDTHS = {
+  collapsed: 3,
+  compact: 20,
+  full: 30,
+}
 
 export class App {
   private renderer!: CliRenderer
@@ -24,9 +41,11 @@ export class App {
   private articleView!: ArticleView
   private statusBar!: StatusBar
   private rootContainer!: BoxRenderable
+  private mainArea!: BoxRenderable
 
   private syncInterval: ReturnType<typeof setInterval> | null = null
   private destroyed = false
+  private initialFeedLoaded = false
 
   constructor(config: Config) {
     this.config = config
@@ -54,18 +73,87 @@ export class App {
     this.buildLayout()
     this.setupKeyboard()
     this.setupStateListener()
+    this.setupResizeHandler()
 
     this.renderer.start()
+
+    this.updateLayoutMode()
 
     await this.initialLoad()
 
     this.startAutoSync()
   }
 
+  private getLayoutMode(width: number): LayoutMode {
+    if (width < LAYOUT_BREAKPOINTS.narrow) return 'single'
+    if (width < LAYOUT_BREAKPOINTS.wide) return 'compact'
+    return 'wide'
+  }
+
+  private updateLayoutMode(): void {
+    const width = this.renderer.width
+    const height = this.renderer.height
+    const layoutMode = this.getLayoutMode(width)
+
+    this.state.update({
+      layoutMode,
+      terminalWidth: width,
+      terminalHeight: height,
+    })
+
+    this.applyLayout()
+  }
+
+  private applyLayout(): void {
+    const state = this.state.get()
+
+    if (state.zenMode && state.viewMode === 'reader') {
+      this.feedList.container.visible = false
+      this.articleView.container.visible = true
+      this.articleView.container.width = '100%'
+      this.articleView.container.flexGrow = 1
+      this.statusBar.text.visible = false
+    } else if (state.layoutMode === 'single') {
+      this.statusBar.text.visible = true
+      this.feedList.container.visible = state.viewMode === 'feeds'
+      this.articleView.container.visible = state.viewMode !== 'feeds'
+
+      if (state.viewMode === 'feeds') {
+        this.feedList.container.width = '100%'
+        this.feedList.container.flexGrow = 1
+      } else {
+        this.articleView.container.width = '100%'
+        this.articleView.container.flexGrow = 1
+      }
+    } else {
+      this.statusBar.text.visible = true
+
+      const showSidebar = !state.zenMode && state.viewMode !== 'reader' && !state.sidebarCollapsed
+
+      this.feedList.container.visible = showSidebar
+      this.articleView.container.visible = true
+
+      if (showSidebar) {
+        if (state.sidebarCollapsed) {
+          this.feedList.container.width = SIDEBAR_WIDTHS.collapsed
+        } else if (state.layoutMode === 'compact') {
+          this.feedList.container.width = SIDEBAR_WIDTHS.compact
+        } else {
+          this.feedList.container.width = SIDEBAR_WIDTHS.full
+        }
+        this.feedList.container.flexGrow = 0
+      }
+
+      this.articleView.container.flexGrow = 1
+    }
+
+    this.renderer.requestRender()
+  }
+
   private buildLayout(): void {
     this.rootContainer = new BoxRenderable(this.renderer, {
       id: 'root',
-      flexDirection: 'row',
+      flexDirection: 'column',
       width: '100%',
       height: '100%',
       shouldFill: true,
@@ -76,30 +164,26 @@ export class App {
     this.articleView = new ArticleView(this.renderer)
     this.statusBar = new StatusBar(this.renderer)
 
-    const listWidthPercent =
-      typeof this.config.ui.list_width === 'number'
-        ? `${this.config.ui.list_width}%`
-        : this.config.ui.list_width
-
-    this.feedList.container.width = listWidthPercent as `${number}%`
-    this.feedList.container.height = '100%'
-
-    this.articleView.container.flexGrow = 1
-    this.articleView.container.height = '100%'
-
-    const mainArea = new BoxRenderable(this.renderer, {
+    this.mainArea = new BoxRenderable(this.renderer, {
       id: 'main-area',
       flexDirection: 'row',
       flexGrow: 1,
       shouldFill: true,
     })
-    mainArea.add(this.feedList.container)
-    mainArea.add(this.articleView.container)
 
-    this.rootContainer.add(mainArea)
+    this.mainArea.add(this.feedList.container)
+    this.mainArea.add(this.articleView.container)
+
+    this.rootContainer.add(this.mainArea)
     this.rootContainer.add(this.statusBar.text)
 
     this.renderer.root.add(this.rootContainer)
+  }
+
+  private setupResizeHandler(): void {
+    this.renderer.on('resize', () => {
+      this.updateLayoutMode()
+    })
   }
 
   private setupKeyboard(): void {
@@ -118,32 +202,43 @@ export class App {
     })
   }
 
+  private navigateToViewMode(viewMode: ViewMode): void {
+    this.state.update({ viewMode })
+    this.applyLayout()
+  }
+
   private handleAction(action: Action): void {
     const state = this.state.get()
-    const resolvedAction = resolveActionForContext(action, state.activePane, state.articleViewMode)
+    const resolvedAction = resolveActionForContext(action, state.viewMode)
     if (!resolvedAction) return
 
     switch (resolvedAction) {
       case 'navDown': {
-        if (state.activePane === 'feeds') {
+        if (state.viewMode === 'feeds') {
           const maxIdx = state.feeds.length - 1
           if (state.selectedFeedIndex < maxIdx) {
-            this.state.update({ selectedFeedIndex: state.selectedFeedIndex + 1 })
-            this.loadArticlesForFeed(state.selectedFeedIndex + 1)
+            const newIndex = state.selectedFeedIndex + 1
+            this.state.update({ selectedFeedIndex: newIndex })
+            this.loadArticlesForFeed(newIndex)
           }
         } else {
           const maxIdx = state.articles.length - 1
           if (state.selectedArticleIndex < maxIdx) {
-            this.state.update({ selectedArticleIndex: state.selectedArticleIndex + 1 })
+            const newIndex = state.selectedArticleIndex + 1
+            this.state.update({ selectedArticleIndex: newIndex })
+            if (state.viewMode === 'reader') {
+              this.markCurrentArticleAsRead()
+            }
           }
         }
         break
       }
       case 'navUp': {
-        if (state.activePane === 'feeds') {
+        if (state.viewMode === 'feeds') {
           if (state.selectedFeedIndex > 0) {
-            this.state.update({ selectedFeedIndex: state.selectedFeedIndex - 1 })
-            this.loadArticlesForFeed(state.selectedFeedIndex - 1)
+            const newIndex = state.selectedFeedIndex - 1
+            this.state.update({ selectedFeedIndex: newIndex })
+            this.loadArticlesForFeed(newIndex)
           }
         } else {
           if (state.selectedArticleIndex > 0) {
@@ -152,29 +247,26 @@ export class App {
         }
         break
       }
-      case 'navLeft': {
-        if (state.activePane === 'articles') {
-          this.state.update({ activePane: 'feeds' })
-        }
-        break
-      }
       case 'select': {
-        if (state.activePane === 'feeds') {
-          this.state.update({
-            activePane: 'articles',
-            articleViewMode: 'list',
-            selectedArticleIndex: 0,
-          })
-        } else if (state.articleViewMode === 'list') {
-          this.state.update({ articleViewMode: 'detail' })
+        const nextMode = getNextViewMode(state.viewMode)
+        if (nextMode) {
+          if (nextMode === 'articles' && state.articles.length === 0) {
+            this.loadArticlesForFeed(state.selectedFeedIndex).then(() => {
+              this.navigateToViewMode(nextMode)
+            })
+          } else {
+            this.navigateToViewMode(nextMode)
+            if (nextMode === 'reader') {
+              this.markCurrentArticleAsRead()
+            }
+          }
         }
         break
       }
       case 'goBack': {
-        if (state.activePane === 'articles' && state.articleViewMode === 'detail') {
-          this.state.update({ articleViewMode: 'list' })
-        } else if (state.activePane === 'articles') {
-          this.state.update({ activePane: 'feeds' })
+        const prevMode = getPreviousViewMode(state.viewMode)
+        if (prevMode) {
+          this.navigateToViewMode(prevMode)
         }
         break
       }
@@ -187,13 +279,54 @@ export class App {
         break
       }
       case 'markRead': {
-        this.toggleRead()
+        if (state.viewMode !== 'feeds') {
+          this.toggleRead()
+        }
         break
       }
       case 'star': {
-        this.toggleStar()
+        if (state.viewMode !== 'feeds') {
+          this.toggleStar()
+        }
         break
       }
+      case 'toggleSidebar': {
+        if (state.layoutMode !== 'single') {
+          this.state.update({ sidebarCollapsed: !state.sidebarCollapsed })
+          this.applyLayout()
+        }
+        break
+      }
+      case 'toggleZenMode': {
+        if (state.viewMode === 'reader') {
+          this.state.update({ zenMode: !state.zenMode })
+          this.applyLayout()
+        }
+        break
+      }
+    }
+  }
+
+  private markCurrentArticleAsRead(): void {
+    const state = this.state.get()
+    const article = getSelectedArticle(state)
+    if (!article) return
+
+    const isRead = article.categories?.includes('user/-/state/com.google/read')
+    if (!isRead) {
+      this.cache.markAsRead(article.id, true)
+
+      const updatedArticles = state.articles.map((a) => {
+        if (a.id !== article.id) return a
+        const categories = [...(a.categories || [])]
+        if (!categories.includes('user/-/state/com.google/read')) {
+          categories.push('user/-/state/com.google/read')
+        }
+        return { ...a, categories }
+      })
+
+      this.state.update({ articles: updatedArticles })
+      this.client.markAsRead([article.id]).catch(() => {})
     }
   }
 
@@ -219,7 +352,8 @@ export class App {
         })
         this.render(this.state.get())
 
-        if (cachedFeeds.length > 0) {
+        if (cachedFeeds.length > 0 && !this.initialFeedLoaded) {
+          this.initialFeedLoaded = true
           await this.loadArticlesForFeed(0)
         }
       }
@@ -262,7 +396,6 @@ export class App {
       this.cache.saveArticles(articles.items)
 
       const currentState = this.state.get()
-      const selectedFeed = getSelectedFeed(currentState)
 
       this.state.update({
         feeds: enrichedFeeds,
@@ -271,8 +404,14 @@ export class App {
         errorMessage: null,
       })
 
-      if (selectedFeed) {
-        await this.loadArticlesForFeed(currentState.selectedFeedIndex)
+      if (!this.initialFeedLoaded && enrichedFeeds.length > 0) {
+        this.initialFeedLoaded = true
+        await this.loadArticlesForFeed(0)
+      } else if (currentState.viewMode !== 'feeds') {
+        const selectedFeed = getSelectedFeed(currentState)
+        if (selectedFeed) {
+          await this.loadArticlesForFeed(currentState.selectedFeedIndex)
+        }
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
@@ -300,7 +439,6 @@ export class App {
         articles,
         loadingArticles: false,
         selectedArticleIndex: 0,
-        articleViewMode: 'list',
       })
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
