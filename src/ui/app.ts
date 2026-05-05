@@ -2,7 +2,7 @@ import { createCliRenderer, BoxRenderable } from '@opentui/core'
 import type { CliRenderer } from '@opentui/core'
 import type { Config } from '../config/index.ts'
 import { FreshRSSClient } from '../api/index.ts'
-import type { Feed } from '../api/types.ts'
+import type { Feed, Article } from '../api/types.ts'
 import { Cache } from '../cache/index.ts'
 import {
   StateManager,
@@ -74,6 +74,7 @@ export class App {
     this.setupKeyboard()
     this.setupStateListener()
     this.setupResizeHandler()
+    this.setupDebugMode()
 
     this.renderer.start()
 
@@ -82,6 +83,40 @@ export class App {
     await this.initialLoad()
 
     this.startAutoSync()
+  }
+
+  private setupDebugMode(): void {
+    if (!process.env.DEBUG) return
+
+    const debugPath = process.env.DEBUG_PATH || '/tmp/tuirss-state.json'
+
+    this.state.subscribe((state: AppState) => {
+      const debugInfo = {
+        timestamp: new Date().toISOString(),
+        viewMode: state.viewMode,
+        layoutMode: state.layoutMode,
+        feedsCount: state.feeds.length,
+        articlesCount: state.articles.length,
+        selectedFeedIndex: state.selectedFeedIndex,
+        selectedArticleIndex: state.selectedArticleIndex,
+        zenMode: state.zenMode,
+        sidebarCollapsed: state.sidebarCollapsed,
+        isSearching: state.isSearching,
+        searchQuery: state.searchQuery,
+        filteredArticlesCount: state.filteredArticles.length,
+        hasMoreArticles: state.hasMoreArticles,
+        isOnline: state.isOnline,
+        syncing: state.syncing,
+        errorMessage: state.errorMessage,
+        statusMessage: state.statusMessage,
+        terminalSize: {
+          width: state.terminalWidth,
+          height: state.terminalHeight,
+        },
+      }
+
+      Bun.write(debugPath, JSON.stringify(debugInfo, null, 2)).catch(() => {})
+    })
   }
 
   private getLayoutMode(width: number): LayoutMode {
@@ -192,8 +227,46 @@ export class App {
     })
 
     this.renderer.keyInput.on('keypress', (key) => {
-      this.keyboard.handleKey(key)
+      const state = this.state.get()
+      if (state.isSearching) {
+        this.handleSearchInput(key)
+      } else {
+        this.keyboard.handleKey(key)
+      }
     })
+  }
+
+  private handleSearchInput(key: {
+    name: string
+    ctrl: boolean
+    shift: boolean
+    meta: boolean
+    char?: string
+  }): void {
+    const state = this.state.get()
+    let query = state.searchQuery
+
+    if (key.name === 'return' || key.name === 'enter') {
+      this.performSearch(query)
+      return
+    }
+
+    if (key.name === 'escape') {
+      this.state.update({ isSearching: false, searchQuery: '' })
+      this.render(this.state.get())
+      return
+    }
+
+    if (key.name === 'backspace') {
+      query = query.slice(0, -1)
+    } else if (key.name === 'space') {
+      query += ' '
+    } else if (key.char && key.char.length === 1 && !key.ctrl && !key.meta) {
+      query += key.char
+    }
+
+    this.state.update({ searchQuery: query })
+    this.render(this.state.get())
   }
 
   private setupStateListener(): void {
@@ -207,10 +280,16 @@ export class App {
     this.applyLayout()
   }
 
+  private getDisplayArticles(state: AppState): Article[] {
+    return state.filteredArticles.length > 0 ? state.filteredArticles : state.articles
+  }
+
   private handleAction(action: Action): void {
     const state = this.state.get()
     const resolvedAction = resolveActionForContext(action, state.viewMode)
     if (!resolvedAction) return
+
+    const displayArticles = this.getDisplayArticles(state)
 
     switch (resolvedAction) {
       case 'navDown': {
@@ -222,7 +301,7 @@ export class App {
             this.loadArticlesForFeed(newIndex)
           }
         } else {
-          const maxIdx = state.articles.length - 1
+          const maxIdx = displayArticles.length - 1
           if (state.selectedArticleIndex < maxIdx) {
             const newIndex = state.selectedArticleIndex + 1
             this.state.update({ selectedArticleIndex: newIndex })
@@ -304,7 +383,222 @@ export class App {
         }
         break
       }
+      case 'scrollDown': {
+        this.articleView.scrollDown(3)
+        break
+      }
+      case 'scrollUp': {
+        this.articleView.scrollUp(3)
+        break
+      }
+      case 'pageDown': {
+        this.articleView.scrollDown(15)
+        break
+      }
+      case 'pageUp': {
+        this.articleView.scrollUp(15)
+        break
+      }
+      case 'scrollToTop': {
+        this.articleView.scrollToTop()
+        break
+      }
+      case 'scrollToBottom': {
+        this.articleView.scrollToBottom()
+        break
+      }
+      case 'search': {
+        if (state.viewMode !== 'reader') {
+          this.startSearch()
+        }
+        break
+      }
+      case 'clearSearch': {
+        this.clearSearch()
+        break
+      }
+      case 'expandCollapse': {
+        if (state.viewMode === 'feeds') {
+          this.toggleCategoryExpand()
+        }
+        break
+      }
+      case 'loadMore': {
+        if (state.viewMode === 'articles') {
+          this.loadMoreArticles()
+        }
+        break
+      }
+      case 'exportOpml': {
+        this.exportFeedsToOpml()
+        break
+      }
     }
+  }
+
+  private async exportFeedsToOpml(): Promise<void> {
+    try {
+      const opml = this.cache.exportToOpml()
+      const fileName = `tuirss-feeds-${new Date().toISOString().split('T')[0]}.opml`
+      const filePath = `${process.env.HOME}/Downloads/${fileName}`
+
+      await Bun.write(filePath, opml)
+
+      this.state.update({
+        statusMessage: `Exported feeds to ${fileName}`,
+      })
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
+      this.state.update({
+        errorMessage: `Export failed: ${msg}`,
+      })
+    }
+    this.render(this.state.get())
+  }
+
+  private async loadMoreArticles(): Promise<void> {
+    const state = this.state.get()
+    if (!state.hasMoreArticles || state.loadingArticles) {
+      return
+    }
+
+    const feed = getSelectedFeed(state)
+    if (!feed) return
+
+    this.state.update({ loadingArticles: true })
+    this.render(this.state.get())
+
+    try {
+      const nextPage = state.articlesPage + 1
+      const newArticles = this.cache.getArticles(feed.id, true, nextPage, 50)
+
+      if (newArticles.length === 0) {
+        this.state.update({
+          hasMoreArticles: false,
+          loadingArticles: false,
+        })
+      } else {
+        const allArticles = [...state.articles, ...newArticles]
+        this.state.update({
+          articles: allArticles,
+          articlesPage: nextPage,
+          hasMoreArticles: newArticles.length === 50,
+          loadingArticles: false,
+        })
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
+      this.state.update({
+        loadingArticles: false,
+        errorMessage: msg,
+      })
+    }
+
+    this.render(this.state.get())
+  }
+
+  private toggleCategoryExpand(): void {
+    const state = this.state.get()
+    const categories = this.groupFeedsByCategory(state.feeds)
+    const currentFeedIndex = state.selectedFeedIndex
+    let currentIndex = 0
+
+    for (const category of categories) {
+      const categoryStart = currentIndex
+      const categoryEnd = currentIndex + category.feeds.length
+
+      if (currentFeedIndex >= categoryStart && currentFeedIndex < categoryEnd) {
+        const expanded = new Set(state.expandedCategories)
+        if (expanded.has(category.id)) {
+          expanded.delete(category.id)
+        } else {
+          expanded.add(category.id)
+        }
+        this.state.update({ expandedCategories: expanded })
+        break
+      }
+
+      currentIndex = categoryEnd
+    }
+  }
+
+  private groupFeedsByCategory(feeds: Feed[]): Array<{ id: string; label: string; feeds: Feed[] }> {
+    const groups = new Map<string, { id: string; label: string; feeds: Feed[] }>()
+    const uncategorized: Feed[] = []
+
+    for (const feed of feeds) {
+      if (feed.categories && feed.categories.length > 0) {
+        for (const category of feed.categories) {
+          const id = category.id || 'uncategorized'
+          const label = category.label || 'Uncategorized'
+
+          if (!groups.has(id)) {
+            groups.set(id, { id, label, feeds: [] })
+          }
+
+          groups.get(id)!.feeds.push(feed)
+        }
+      } else {
+        uncategorized.push(feed)
+      }
+    }
+
+    if (uncategorized.length > 0) {
+      groups.set('uncategorized', {
+        id: 'uncategorized',
+        label: 'Uncategorized',
+        feeds: uncategorized,
+      })
+    }
+
+    return Array.from(groups.values()).sort((a, b) => a.label.localeCompare(b.label))
+  }
+
+  private startSearch(): void {
+    this.state.update({ isSearching: true })
+    this.render(this.state.get())
+  }
+
+  private clearSearch(): void {
+    const state = this.state.get()
+    if (state.isSearching) {
+      this.state.update({
+        isSearching: false,
+        searchQuery: '',
+        filteredArticles: [],
+        selectedArticleIndex: 0,
+      })
+    } else if (state.searchQuery) {
+      this.state.update({
+        searchQuery: '',
+        filteredArticles: [],
+        selectedArticleIndex: 0,
+      })
+    }
+    this.render(this.state.get())
+  }
+
+  private performSearch(query: string): void {
+    if (!query.trim()) {
+      this.state.update({
+        searchQuery: '',
+        filteredArticles: [],
+        selectedArticleIndex: 0,
+      })
+      return
+    }
+
+    const state = this.state.get()
+    const feed = getSelectedFeed(state)
+    const results = this.cache.searchArticles(query.trim(), feed?.id)
+
+    this.state.update({
+      searchQuery: query,
+      filteredArticles: results,
+      selectedArticleIndex: 0,
+      isSearching: false,
+    })
+    this.render(this.state.get())
   }
 
   private markCurrentArticleAsRead(): void {
@@ -402,6 +696,8 @@ export class App {
         syncing: false,
         statusMessage: `Synced ${enrichedFeeds.length} feeds`,
         errorMessage: null,
+        lastSyncTime: Date.now(),
+        isOnline: true,
       })
 
       if (!this.initialFeedLoaded && enrichedFeeds.length > 0) {
@@ -434,11 +730,14 @@ export class App {
     this.render(this.state.get())
 
     try {
-      const articles = this.cache.getArticles(feed.id, true)
+      const articles = this.cache.getArticles(feed.id, true, 0, 50)
+      const totalCount = this.cache.getArticleCount(feed.id, true)
       this.state.update({
         articles,
         loadingArticles: false,
         selectedArticleIndex: 0,
+        articlesPage: 0,
+        hasMoreArticles: articles.length < totalCount,
       })
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
