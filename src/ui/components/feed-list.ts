@@ -1,7 +1,22 @@
-import { BoxRenderable, TextRenderable } from '@opentui/core'
+import { BoxRenderable, TextRenderable, TextAttributes } from '@opentui/core'
 import type { RenderContext } from '@opentui/core'
 import type { AppState } from '../state.ts'
 import type { Feed } from '../../api/types.ts'
+
+const COLORS = {
+  background: '#1a1a2e',
+  text: '#e0e0e0',
+  textDim: '#888888',
+  accent: '#7aa2f7',
+  border: '#3b4261',
+}
+
+interface CategoryGroup {
+  id: string
+  label: string
+  feeds: Feed[]
+  totalUnread: number
+}
 
 export class FeedList {
   readonly container: BoxRenderable
@@ -11,15 +26,17 @@ export class FeedList {
     this.container = new BoxRenderable(ctx, {
       id: 'feed-list-container',
       border: true,
-      borderStyle: 'single',
+      borderStyle: 'rounded',
+      borderColor: COLORS.border,
       title: ' Feeds ',
+      titleAlignment: 'left',
       shouldFill: true,
-      backgroundColor: '#1a1a2e',
+      backgroundColor: COLORS.background,
     })
 
     this.contentText = new TextRenderable(ctx, {
       id: 'feed-list-text',
-      fg: '#aaaaaa',
+      fg: COLORS.textDim,
       wrapMode: 'word',
     })
 
@@ -38,37 +55,125 @@ export class FeedList {
 
     if (state.sidebarCollapsed) {
       this.container.title = '▶'
-      this.contentText.content = this.renderCollapsedContent(state)
+      this.renderCollapsedContent(state)
     } else {
       this.container.title = ' Feeds '
-      this.contentText.content = this.renderContent(state)
+      this.renderContent(state)
     }
   }
 
-  private renderCollapsedContent(state: AppState): string {
+  private renderCollapsedContent(state: AppState): void {
     const totalUnread = state.feeds.reduce((sum, f) => sum + (f.unreadCount ?? 0), 0)
-    return totalUnread > 0 ? `●\n${totalUnread}` : '●'
+    if (totalUnread > 0) {
+      this.contentText.content = `●\n${totalUnread}`
+    } else {
+      this.contentText.content = '●'
+    }
   }
 
-  private renderContent(state: AppState): string {
+  private groupFeedsByCategory(feeds: Feed[]): CategoryGroup[] {
+    const groups = new Map<string, CategoryGroup>()
+    const uncategorized: Feed[] = []
+
+    for (const feed of feeds) {
+      if (feed.categories && feed.categories.length > 0) {
+        for (const category of feed.categories) {
+          const id = category.id || 'uncategorized'
+          const label = category.label || 'Uncategorized'
+
+          if (!groups.has(id)) {
+            groups.set(id, { id, label, feeds: [], totalUnread: 0 })
+          }
+
+          const group = groups.get(id)!
+          group.feeds.push(feed)
+          group.totalUnread += feed.unreadCount ?? 0
+        }
+      } else {
+        uncategorized.push(feed)
+      }
+    }
+
+    if (uncategorized.length > 0) {
+      groups.set('uncategorized', {
+        id: 'uncategorized',
+        label: 'Uncategorized',
+        feeds: uncategorized,
+        totalUnread: uncategorized.reduce((sum, f) => sum + (f.unreadCount ?? 0), 0),
+      })
+    }
+
+    return Array.from(groups.values()).sort((a, b) => a.label.localeCompare(b.label))
+  }
+
+  private renderContent(state: AppState): void {
     if (state.loadingFeeds) {
-      return 'Loading feeds...'
+      this.contentText.content = 'Loading feeds...'
+      this.contentText.attributes = TextAttributes.DIM
+      return
     }
 
     if (state.feeds.length === 0) {
-      return 'No feeds found. Press r to refresh.'
+      this.contentText.content = 'No feeds found. Press r to refresh.'
+      this.contentText.attributes = TextAttributes.DIM
+      return
     }
 
-    const lines: string[] = []
-    for (let i = 0; i < state.feeds.length; i++) {
-      const feed = state.feeds[i] as Feed
-      const isSelected = i === state.selectedFeedIndex && state.viewMode === 'feeds'
-      const unread = feed.unreadCount ?? 0
-      const unreadBadge = unread > 0 ? ` (${unread})` : ''
-      const prefix = isSelected ? '▸ ' : '  '
-      lines.push(`${prefix}${feed.title || 'Untitled'}${unreadBadge}`)
+    this.contentText.attributes = 0
+
+    const categories = this.groupFeedsByCategory(state.feeds)
+    const currentFeedIndex = state.selectedFeedIndex
+    let currentIndex = 0
+
+    let content = ''
+
+    for (const category of categories) {
+      const isExpanded = state.expandedCategories.has(category.id)
+      const isCategorySelected = state.selectedCategory === category.id
+
+      if (content) content += '\n'
+
+      const expandIcon = isExpanded ? '▼' : '▶'
+      const prefix = isCategorySelected && !isExpanded ? '▸ ' : '  '
+
+      if (isCategorySelected && !isExpanded) {
+        content += prefix + expandIcon + ' '
+      } else {
+        content += prefix + expandIcon + ' '
+      }
+
+      content += category.label
+
+      if (category.totalUnread > 0) {
+        content += ` (${category.totalUnread})`
+      }
+
+      if (isExpanded) {
+        for (const feed of category.feeds) {
+          const isSelected = currentIndex === currentFeedIndex && state.viewMode === 'feeds'
+
+          content += '\n'
+
+          if (isSelected) {
+            content += '    ▸ '
+          } else {
+            content += '      '
+          }
+
+          content += feed.title || 'Untitled'
+
+          const unread = feed.unreadCount ?? 0
+          if (unread > 0) {
+            content += ` (${unread})`
+          }
+
+          currentIndex++
+        }
+      } else {
+        currentIndex += category.feeds.length
+      }
     }
 
-    return lines.join('\n')
+    this.contentText.content = content
   }
 }

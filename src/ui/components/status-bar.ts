@@ -2,6 +2,15 @@ import { TextRenderable } from '@opentui/core'
 import type { RenderContext } from '@opentui/core'
 import type { AppState } from '../state.ts'
 
+const COLORS = {
+  fg: '#e0e0e0',
+  bg: '#2a2a3e',
+  accent: '#7aa2f7',
+  success: '#9ece6a',
+  error: '#f7768e',
+  warning: '#e0af68',
+}
+
 export class StatusBar {
   readonly text: TextRenderable
 
@@ -9,53 +18,75 @@ export class StatusBar {
     this.text = new TextRenderable(ctx, {
       id: 'status-bar',
       height: 1,
-      fg: '#ffffff',
-      bg: '#4a4a4a',
+      fg: COLORS.fg,
+      bg: COLORS.bg,
       wrapMode: 'none',
       truncate: true,
     })
   }
 
   update(state: AppState): void {
-    const parts: string[] = []
+    let content = ''
 
-    if (state.syncing) {
-      parts.push('⟳ Syncing...')
+    if (state.isSearching) {
+      content += 'Type to search, Enter to search, Esc to cancel'
+      content += `  │  query: ${state.searchQuery || '(empty)'}`
+      this.text.content = content
+      return
+    }
+
+    if (!state.isOnline) {
+      content += '⚠ offline'
+    } else if (state.syncing) {
+      content += '⟳ syncing...'
     } else if (state.errorMessage) {
-      parts.push(`✗ ${state.errorMessage}`)
+      content += `✗ ${state.errorMessage}`
     } else if (state.statusMessage) {
-      parts.push(state.statusMessage)
+      content += state.statusMessage
+    }
+
+    if (state.lastSyncTime && !state.syncing && state.isOnline) {
+      const lastSync = new Date(state.lastSyncTime)
+      const now = new Date()
+      const diffMinutes = Math.floor((now.getTime() - lastSync.getTime()) / 60000)
+
+      if (diffMinutes > 60) {
+        const diffHours = Math.floor(diffMinutes / 60)
+        if (content) content += '  '
+        content += `last sync: ${diffHours}h ago`
+      }
     }
 
     const totalUnread = state.feeds.reduce((sum, f) => sum + (f.unreadCount ?? 0), 0)
-    parts.push(`Unread: ${totalUnread}`)
+    if (content) content += '  '
+    content += `unread: ${totalUnread}`
 
-    const shortcuts: string[] = ['j/k:navigate']
+    let shortcuts = 'j/k:navigate'
 
     switch (state.viewMode) {
       case 'feeds':
-        shortcuts.push('l/Enter:articles')
+        shortcuts += '  l/Enter:articles'
         break
       case 'articles':
-        shortcuts.push('l/Enter:read', 'h:back')
+        shortcuts += '  l/Enter:read  h:back  /:search'
         break
       case 'reader':
-        shortcuts.push('h:back', 'z:zen')
+        shortcuts += '  h:back  z:zen'
         break
     }
 
     if (state.viewMode !== 'feeds') {
-      shortcuts.push('m:read', 's:star')
+      shortcuts += '  m:read  s:star'
     }
 
-    shortcuts.push('r:refresh', 'q:quit')
+    shortcuts += '  r:refresh  ^e:export  q:quit'
 
     if (state.layoutMode !== 'single' && state.viewMode !== 'reader') {
-      shortcuts.push('\\:sidebar')
+      shortcuts += '  \\:sidebar'
     }
 
-    parts.push(shortcuts.join('  '))
+    content += `  │  ${shortcuts}`
 
-    this.text.content = parts.join('  │  ')
+    this.text.content = content
   }
 }
