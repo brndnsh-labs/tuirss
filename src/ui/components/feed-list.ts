@@ -1,4 +1,15 @@
-import { BoxRenderable, TextRenderable, TextAttributes } from '@opentui/core'
+import {
+  BoxRenderable,
+  TextRenderable,
+  TextAttributes,
+  t,
+  fg,
+  bold,
+  dim,
+  StyledText,
+  stringToStyledText,
+  type TextChunk,
+} from '@opentui/core'
 import type { RenderContext } from '@opentui/core'
 import type { AppState } from '../state.ts'
 import type { Feed } from '../../api/types.ts'
@@ -9,6 +20,11 @@ const COLORS = {
   textDim: '#888888',
   accent: '#7aa2f7',
   border: '#3b4261',
+  borderUnfocused: '#24283b',
+  selectedBg: '#2a2a4a',
+  selectedFg: '#ffffff',
+  categoryDim: '#565f89',
+  unreadDot: '#7aa2f7',
 }
 
 interface CategoryGroup {
@@ -27,7 +43,7 @@ export class FeedList {
       id: 'feed-list-container',
       border: true,
       borderStyle: 'rounded',
-      borderColor: COLORS.border,
+      borderColor: COLORS.borderUnfocused,
       title: ' Feeds ',
       titleAlignment: 'left',
       shouldFill: true,
@@ -53,22 +69,8 @@ export class FeedList {
       return
     }
 
-    if (state.sidebarCollapsed) {
-      this.container.title = '▶'
-      this.renderCollapsedContent(state)
-    } else {
-      this.container.title = ' Feeds '
-      this.renderContent(state)
-    }
-  }
-
-  private renderCollapsedContent(state: AppState): void {
-    const totalUnread = state.feeds.reduce((sum, f) => sum + (f.unreadCount ?? 0), 0)
-    if (totalUnread > 0) {
-      this.contentText.content = `●\n${totalUnread}`
-    } else {
-      this.contentText.content = '●'
-    }
+    this.container.title = ' Feeds '
+    this.renderContent(state)
   }
 
   private groupFeedsByCategory(feeds: Feed[]): CategoryGroup[] {
@@ -108,13 +110,13 @@ export class FeedList {
 
   private renderContent(state: AppState): void {
     if (state.loadingFeeds) {
-      this.contentText.content = 'Loading feeds...'
+      this.contentText.content = t`${dim('Loading feeds...')}`
       this.contentText.attributes = TextAttributes.DIM
       return
     }
 
     if (state.feeds.length === 0) {
-      this.contentText.content = 'No feeds found. Press r to refresh.'
+      this.contentText.content = t`${dim('No feeds found. Press r to refresh.')}`
       this.contentText.attributes = TextAttributes.DIM
       return
     }
@@ -122,51 +124,50 @@ export class FeedList {
     this.contentText.attributes = 0
 
     const categories = this.groupFeedsByCategory(state.feeds)
-    const currentFeedIndex = state.selectedFeedIndex
-    let currentIndex = 0
 
-    let content = ''
+    const allChunks: TextChunk[] = []
+
+    const allUnread = state.feeds.reduce((sum, f) => sum + (f.unreadCount ?? 0), 0)
+    const isAllSelected = !state.selectedFeedId
+
+    if (isAllSelected) {
+      const line = t`${bold(fg(COLORS.selectedFg)('▸ All'))} ${bold(fg(COLORS.selectedFg)(`(${allUnread})`))}`
+      allChunks.push(...line.chunks)
+    } else {
+      const line = t`  All ${fg(COLORS.unreadDot)(`(${allUnread})`)}`
+      allChunks.push(...line.chunks)
+    }
 
     for (const category of categories) {
       const isExpanded = state.expandedCategories.has(category.id)
 
-      if (content) content += '\n'
+      allChunks.push(...stringToStyledText('\n\n').chunks)
 
       const expandIcon = isExpanded ? '▼' : '▶'
-      content += '  ' + expandIcon + ' '
+      const categoryUnreadStr = category.totalUnread > 0 ? ` (${category.totalUnread})` : ''
 
-      content += category.label
-
-      if (category.totalUnread > 0) {
-        content += ` (${category.totalUnread})`
-      }
+      const catLine = t`${dim('  ' + expandIcon + ' ')}${fg(COLORS.categoryDim)(category.label)}${fg(COLORS.categoryDim)(categoryUnreadStr)}`
+      allChunks.push(...catLine.chunks)
 
       if (isExpanded) {
         for (const feed of category.feeds) {
-          const isSelected = currentIndex === currentFeedIndex && state.viewMode === 'feeds'
+          const isSelected = state.selectedFeedId === feed.id
+          const unread = feed.unreadCount ?? 0
+          const feedUnreadStr = unread > 0 ? ` (${unread})` : ''
 
-          content += '\n'
+          allChunks.push(...stringToStyledText('\n').chunks)
 
           if (isSelected) {
-            content += '    ▸ '
+            const feedLine = t`${bold(fg(COLORS.accent)('    ▸ '))}${bold(fg(COLORS.selectedFg)(feed.title || 'Untitled'))}${fg(COLORS.unreadDot)(feedUnreadStr)}`
+            allChunks.push(...feedLine.chunks)
           } else {
-            content += '      '
+            const feedLine = t`      ${feed.title || 'Untitled'}${fg(COLORS.unreadDot)(feedUnreadStr)}`
+            allChunks.push(...feedLine.chunks)
           }
-
-          content += feed.title || 'Untitled'
-
-          const unread = feed.unreadCount ?? 0
-          if (unread > 0) {
-            content += ` (${unread})`
-          }
-
-          currentIndex++
         }
-      } else {
-        currentIndex += category.feeds.length
       }
     }
 
-    this.contentText.content = content
+    this.contentText.content = new StyledText(allChunks)
   }
 }

@@ -174,17 +174,16 @@ export const mockArticles: Article[] = [
 // ==== MOCK APP STATES ====
 
 export const defaultState: AppState = {
-  viewMode: 'articles',
+  navigationDepth: 'content',
   feeds: mockFeeds,
   articles: mockArticles.slice(0, 5),
-  selectedFeedIndex: 0,
+  selectedFeedId: null,
   selectedArticleIndex: 2,
   loadingFeeds: false,
   loadingArticles: false,
   syncing: false,
   statusMessage: 'Synced 8 feeds',
   errorMessage: null,
-  sidebarCollapsed: false,
   layoutMode: 'wide',
   terminalWidth: 160,
   terminalHeight: 50,
@@ -203,7 +202,7 @@ export const emptyState: AppState = {
   ...defaultState,
   feeds: [],
   articles: [],
-  selectedFeedIndex: 0,
+  selectedFeedId: null,
   selectedArticleIndex: 0,
   statusMessage: '',
   expandedCategories: new Set(),
@@ -248,20 +247,24 @@ export const singleFeedState: AppState = {
   ...defaultState,
   feeds: mockFeeds.slice(0, 1),
   articles: mockArticles.filter(a => a.origin.streamId === 'feed/001'),
-  selectedFeedIndex: 0,
+  selectedFeedId: 'feed/001',
 }
 
 export const zenModeState: AppState = {
   ...defaultState,
-  viewMode: 'reader',
+  navigationDepth: 'content',
   zenMode: true,
   selectedArticleIndex: 0,
 }
 
-export const collapsedSidebarState: AppState = {
+export const articlesDepthState: AppState = {
   ...defaultState,
-  viewMode: 'articles',
-  sidebarCollapsed: true,
+  navigationDepth: 'articles',
+}
+
+export const feedsDepthState: AppState = {
+  ...defaultState,
+  navigationDepth: 'feeds',
 }
 
 export const compactLayoutState: AppState = {

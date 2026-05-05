@@ -2,16 +2,10 @@ import { createCliRenderer, BoxRenderable } from '@opentui/core'
 import type { CliRenderer } from '@opentui/core'
 import type { Config } from '../config/index.ts'
 import { FreshRSSClient } from '../api/index.ts'
-import type { Feed, Article } from '../api/types.ts'
+import type { Feed } from '../api/types.ts'
 import { Cache } from '../cache/index.ts'
-import {
-  StateManager,
-  getSelectedFeed,
-  getSelectedArticle,
-  getNextViewMode,
-  getPreviousViewMode,
-} from './state.ts'
-import type { AppState, ViewMode, LayoutMode } from './state.ts'
+import { StateManager, getSelectedArticle, getDisplayArticles } from './state.ts'
+import type { AppState, NavigationDepth, LayoutMode } from './state.ts'
 import { KeyboardHandler, resolveActionForContext } from './keyboard.ts'
 import type { Action } from './keyboard.ts'
 import { FeedList } from './components/feed-list.ts'
@@ -23,11 +17,20 @@ const LAYOUT_BREAKPOINTS = {
   wide: 140,
 }
 
-const SIDEBAR_WIDTHS = {
-  collapsed: 3,
-  compact: 20,
-  full: 30,
+const COLUMN_WIDTHS = {
+  feeds: 25,
+  articles: 35,
+  minContent: 50,
 }
+
+const COLORS = {
+  borderDefault: '#3b4261',
+  borderFocused: '#7aa2f7',
+  borderUnfocused: '#24283b',
+  background: '#1a1a2e',
+}
+
+const ANIMATION_DURATION = 250
 
 export class App {
   private renderer!: CliRenderer
@@ -47,7 +50,8 @@ export class App {
   private unsubscribeState: (() => void) | null = null
   private unsubscribeDebug: (() => void) | null = null
   private destroyed = false
-  private initialFeedLoaded = false
+  private initialLoadDone = false
+  private animationFrameId: ReturnType<typeof setTimeout> | null = null
 
   constructor(config: Config) {
     this.config = config
@@ -95,14 +99,13 @@ export class App {
     this.unsubscribeDebug = this.state.subscribe((state: AppState) => {
       const debugInfo = {
         timestamp: new Date().toISOString(),
-        viewMode: state.viewMode,
+        navigationDepth: state.navigationDepth,
         layoutMode: state.layoutMode,
         feedsCount: state.feeds.length,
         articlesCount: state.articles.length,
-        selectedFeedIndex: state.selectedFeedIndex,
+        selectedFeedId: state.selectedFeedId,
         selectedArticleIndex: state.selectedArticleIndex,
         zenMode: state.zenMode,
-        sidebarCollapsed: state.sidebarCollapsed,
         isSearching: state.isSearching,
         searchQuery: state.searchQuery,
         filteredArticlesCount: state.filteredArticles.length,
@@ -144,47 +147,68 @@ export class App {
   private applyLayout(): void {
     const state = this.state.get()
 
-    if (state.zenMode && state.viewMode === 'reader') {
+    if (state.zenMode) {
       this.feedList.container.visible = false
-      this.articleView.container.visible = true
-      this.articleView.container.width = '100%'
-      this.articleView.container.flexGrow = 1
+      this.articleView.showContentOnly()
       this.statusBar.text.visible = false
-    } else if (state.layoutMode === 'single') {
-      this.statusBar.text.visible = true
-      this.feedList.container.visible = state.viewMode === 'feeds'
-      this.articleView.container.visible = state.viewMode !== 'feeds'
-
-      if (state.viewMode === 'feeds') {
-        this.feedList.container.width = '100%'
-        this.feedList.container.flexGrow = 1
-      } else {
-        this.articleView.container.width = '100%'
-        this.articleView.container.flexGrow = 1
-      }
-    } else {
-      this.statusBar.text.visible = true
-
-      const showSidebar = !state.zenMode && state.viewMode !== 'reader' && !state.sidebarCollapsed
-
-      this.feedList.container.visible = showSidebar
-      this.articleView.container.visible = true
-
-      if (showSidebar) {
-        if (state.sidebarCollapsed) {
-          this.feedList.container.width = SIDEBAR_WIDTHS.collapsed
-        } else if (state.layoutMode === 'compact') {
-          this.feedList.container.width = SIDEBAR_WIDTHS.compact
-        } else {
-          this.feedList.container.width = SIDEBAR_WIDTHS.full
-        }
-        this.feedList.container.flexGrow = 0
-      }
-
-      this.articleView.container.flexGrow = 1
+      this.renderer.requestRender()
+      return
     }
 
+    this.statusBar.text.visible = true
+
+    if (state.layoutMode === 'single') {
+      this.applySingleLayout(state)
+    } else {
+      this.applyMultiColumnLayout(state)
+    }
+
+    this.updateFocusBorders(state)
     this.renderer.requestRender()
+  }
+
+  private applySingleLayout(state: AppState): void {
+    switch (state.navigationDepth) {
+      case 'content':
+        this.feedList.container.visible = false
+        this.articleView.showArticleListAndContent()
+        break
+      case 'articles':
+        this.feedList.container.visible = true
+        this.feedList.container.width = '100%'
+        this.feedList.container.flexGrow = 1
+        this.articleView.showArticleListAndContent()
+        break
+      case 'feeds':
+        this.feedList.container.visible = true
+        this.feedList.container.width = '100%'
+        this.feedList.container.flexGrow = 1
+        this.articleView.showArticleListAndContent()
+        break
+    }
+  }
+
+  private applyMultiColumnLayout(state: AppState): void {
+    switch (state.navigationDepth) {
+      case 'content':
+        this.feedList.container.visible = false
+        this.articleView.showArticleListAndContent()
+        this.articleView.setArticleListWidth(COLUMN_WIDTHS.articles)
+        break
+      case 'articles':
+        this.feedList.container.visible = true
+        this.feedList.container.width = COLUMN_WIDTHS.feeds
+        this.feedList.container.flexGrow = 0
+        this.articleView.showArticleListAndContent()
+        this.articleView.setArticleListWidth(COLUMN_WIDTHS.articles)
+        break
+      case 'feeds':
+        this.feedList.container.visible = true
+        this.feedList.container.width = '100%'
+        this.feedList.container.flexGrow = 1
+        this.articleView.showArticleListAndContent()
+        break
+    }
   }
 
   private buildLayout(): void {
@@ -277,50 +301,143 @@ export class App {
     })
   }
 
-  private navigateToViewMode(viewMode: ViewMode): void {
-    this.state.update({ viewMode })
-    this.applyLayout()
+  private navigateToDepth(depth: NavigationDepth): void {
+    const prevState = this.state.get()
+    const prevDepth = prevState.navigationDepth
+
+    if (prevDepth === depth) {
+      this.state.update({ navigationDepth: depth })
+      this.applyLayout()
+      return
+    }
+
+    this.state.update({ navigationDepth: depth })
+
+    if (prevState.layoutMode === 'single') {
+      this.applyLayout()
+      return
+    }
+
+    this.animateLayoutChange(prevDepth, depth)
   }
 
-  private getDisplayArticles(state: AppState): Article[] {
-    return state.filteredArticles.length > 0 ? state.filteredArticles : state.articles
+  private animateLayoutChange(fromDepth: NavigationDepth, toDepth: NavigationDepth): void {
+    if (this.animationFrameId !== null) {
+      clearTimeout(this.animationFrameId)
+      this.animationFrameId = null
+    }
+
+    const state = this.state.get()
+
+    const getTargetWidths = (depth: NavigationDepth): { feeds: number; articles: number } => {
+      switch (depth) {
+        case 'feeds':
+          return { feeds: 100, articles: 35 }
+        case 'articles':
+          return { feeds: COLUMN_WIDTHS.feeds, articles: COLUMN_WIDTHS.articles }
+        case 'content':
+          return { feeds: 0, articles: COLUMN_WIDTHS.articles }
+      }
+    }
+
+    const startWidths = {
+      feeds: this.feedList.container.visible
+        ? typeof this.feedList.container.width === 'number'
+          ? this.feedList.container.width
+          : COLUMN_WIDTHS.feeds
+        : 0,
+      articles: this.articleView.articleListContainer.visible
+        ? typeof this.articleView.articleListContainer.width === 'number'
+          ? this.articleView.articleListContainer.width
+          : COLUMN_WIDTHS.articles
+        : COLUMN_WIDTHS.articles,
+    }
+
+    const endWidths = getTargetWidths(toDepth)
+
+    this.renderer.requestLive()
+
+    const startTime = Date.now()
+
+    const animate = () => {
+      const elapsed = Date.now() - startTime
+      const progress = Math.min(elapsed / ANIMATION_DURATION, 1)
+      const easeProgress = 1 - Math.pow(1 - progress, 3)
+
+      const currentFeedsWidth = Math.round(
+        startWidths.feeds + (endWidths.feeds - startWidths.feeds) * easeProgress
+      )
+      const currentArticlesWidth = Math.round(
+        startWidths.articles + (endWidths.articles - startWidths.articles) * easeProgress
+      )
+
+      if (toDepth === 'content') {
+        this.feedList.container.visible = false
+      } else if (toDepth === 'articles') {
+        this.feedList.container.visible = true
+        this.feedList.container.width = currentFeedsWidth
+        this.feedList.container.flexGrow = 0
+      } else {
+        this.feedList.container.visible = true
+        this.feedList.container.width = '100%'
+        this.feedList.container.flexGrow = 1
+      }
+
+      this.articleView.showArticleListAndContent()
+      this.articleView.setArticleListWidth(currentArticlesWidth)
+
+      this.updateFocusBorders(state)
+
+      this.renderer.requestRender()
+
+      if (progress < 1) {
+        this.animationFrameId = setTimeout(animate, 1000 / 60)
+      } else {
+        this.animationFrameId = null
+        this.applyLayout()
+        this.renderer.dropLive()
+      }
+    }
+
+    animate()
+  }
+
+  private updateFocusBorders(state: AppState): void {
+    const depth = state.navigationDepth
+
+    this.feedList.container.borderColor =
+      depth === 'feeds' ? COLORS.borderFocused : COLORS.borderUnfocused
+
+    this.articleView.articleListContainer.borderColor =
+      depth === 'content' || depth === 'articles' ? COLORS.borderFocused : COLORS.borderUnfocused
+
+    this.articleView.contentContainer.borderColor =
+      depth === 'content' ? COLORS.borderFocused : COLORS.borderUnfocused
   }
 
   private handleAction(action: Action): void {
     const state = this.state.get()
-    const resolvedAction = resolveActionForContext(action, state.viewMode)
+    const resolvedAction = resolveActionForContext(action, state.navigationDepth)
     if (!resolvedAction) return
 
-    const displayArticles = this.getDisplayArticles(state)
+    const displayArticles = getDisplayArticles(state)
 
     switch (resolvedAction) {
       case 'navDown': {
-        if (state.viewMode === 'feeds') {
-          const maxIdx = state.feeds.length - 1
-          if (state.selectedFeedIndex < maxIdx) {
-            const newIndex = state.selectedFeedIndex + 1
-            this.state.update({ selectedFeedIndex: newIndex })
-            this.loadArticlesForFeed(newIndex)
-          }
+        if (state.navigationDepth === 'feeds') {
+          this.navigateFeed(1)
         } else {
           const maxIdx = displayArticles.length - 1
           if (state.selectedArticleIndex < maxIdx) {
-            const newIndex = state.selectedArticleIndex + 1
-            this.state.update({ selectedArticleIndex: newIndex })
-            if (state.viewMode === 'reader') {
-              this.markCurrentArticleAsRead()
-            }
+            this.state.update({ selectedArticleIndex: state.selectedArticleIndex + 1 })
+            this.markCurrentArticleAsRead()
           }
         }
         break
       }
       case 'navUp': {
-        if (state.viewMode === 'feeds') {
-          if (state.selectedFeedIndex > 0) {
-            const newIndex = state.selectedFeedIndex - 1
-            this.state.update({ selectedFeedIndex: newIndex })
-            this.loadArticlesForFeed(newIndex)
-          }
+        if (state.navigationDepth === 'feeds') {
+          this.navigateFeed(-1)
         } else {
           if (state.selectedArticleIndex > 0) {
             this.state.update({ selectedArticleIndex: state.selectedArticleIndex - 1 })
@@ -329,25 +446,31 @@ export class App {
         break
       }
       case 'select': {
-        const nextMode = getNextViewMode(state.viewMode)
-        if (nextMode) {
-          if (nextMode === 'articles' && state.articles.length === 0) {
-            this.loadArticlesForFeed(state.selectedFeedIndex).then(() => {
-              this.navigateToViewMode(nextMode)
-            })
-          } else {
-            this.navigateToViewMode(nextMode)
-            if (nextMode === 'reader') {
-              this.markCurrentArticleAsRead()
-            }
+        if (state.navigationDepth === 'feeds') {
+          const feed = this.getFeedAtIndex(this.getFeedIndexFromState(state))
+          if (feed) {
+            this.state.update({ selectedFeedId: feed.id })
+            this.loadArticlesForFeed(feed.id)
+            this.navigateToDepth('content')
           }
+        } else if (state.navigationDepth === 'articles') {
+          this.navigateToDepth('content')
         }
         break
       }
       case 'goBack': {
-        const prevMode = getPreviousViewMode(state.viewMode)
-        if (prevMode) {
-          this.navigateToViewMode(prevMode)
+        if (state.navigationDepth === 'content') {
+          this.navigateToDepth('articles')
+        } else if (state.navigationDepth === 'articles') {
+          this.navigateToDepth('feeds')
+        }
+        break
+      }
+      case 'goDeeper': {
+        if (state.navigationDepth === 'feeds') {
+          this.navigateToDepth('articles')
+        } else if (state.navigationDepth === 'articles') {
+          this.navigateToDepth('content')
         }
         break
       }
@@ -360,29 +483,16 @@ export class App {
         break
       }
       case 'markRead': {
-        if (state.viewMode !== 'feeds') {
-          this.toggleRead()
-        }
+        this.toggleRead()
         break
       }
       case 'star': {
-        if (state.viewMode !== 'feeds') {
-          this.toggleStar()
-        }
-        break
-      }
-      case 'toggleSidebar': {
-        if (state.layoutMode !== 'single') {
-          this.state.update({ sidebarCollapsed: !state.sidebarCollapsed })
-          this.applyLayout()
-        }
+        this.toggleStar()
         break
       }
       case 'toggleZenMode': {
-        if (state.viewMode === 'reader') {
-          this.state.update({ zenMode: !state.zenMode })
-          this.applyLayout()
-        }
+        this.state.update({ zenMode: !state.zenMode })
+        this.applyLayout()
         break
       }
       case 'scrollDown': {
@@ -410,9 +520,7 @@ export class App {
         break
       }
       case 'search': {
-        if (state.viewMode !== 'reader') {
-          this.startSearch()
-        }
+        this.startSearch()
         break
       }
       case 'clearSearch': {
@@ -420,22 +528,64 @@ export class App {
         break
       }
       case 'expandCollapse': {
-        if (state.viewMode === 'feeds') {
+        if (state.navigationDepth === 'feeds') {
           this.toggleCategoryExpand()
         }
         break
       }
       case 'loadMore': {
-        if (state.viewMode === 'articles') {
-          this.loadMoreArticles()
-        }
+        this.loadMoreArticles()
         break
       }
       case 'exportOpml': {
         this.exportFeedsToOpml()
         break
       }
+      case 'showAllArticles': {
+        this.state.update({ selectedFeedId: null })
+        this.loadAllArticles()
+        break
+      }
     }
+  }
+
+  private navigateFeed(direction: 1 | -1): void {
+    const state = this.state.get()
+    const categories = this.groupFeedsByCategory(state.feeds)
+    const flatFeeds = this.getFlatFeedList(categories, state)
+    const currentIdx = this.getFeedIndexFromState(state)
+    const newIdx = Math.max(0, Math.min(flatFeeds.length - 1, currentIdx + direction))
+
+    if (newIdx !== currentIdx && flatFeeds[newIdx]) {
+      this.state.update({ selectedFeedId: flatFeeds[newIdx]!.id })
+    }
+  }
+
+  private getFeedIndexFromState(state: AppState): number {
+    const categories = this.groupFeedsByCategory(state.feeds)
+    const flatFeeds = this.getFlatFeedList(categories, state)
+    if (!state.selectedFeedId) return 0
+    return flatFeeds.findIndex((f) => f.id === state.selectedFeedId)
+  }
+
+  private getFeedAtIndex(index: number): Feed | null {
+    const state = this.state.get()
+    const categories = this.groupFeedsByCategory(state.feeds)
+    const flatFeeds = this.getFlatFeedList(categories, state)
+    return flatFeeds[index] ?? null
+  }
+
+  private getFlatFeedList(
+    categories: Array<{ id: string; label: string; feeds: Feed[] }>,
+    state: AppState
+  ): Feed[] {
+    const result: Feed[] = []
+    for (const category of categories) {
+      if (state.expandedCategories.has(category.id)) {
+        result.push(...category.feeds)
+      }
+    }
+    return result
   }
 
   private async exportFeedsToOpml(): Promise<void> {
@@ -464,15 +614,14 @@ export class App {
       return
     }
 
-    const feed = getSelectedFeed(state)
-    if (!feed) return
-
     this.state.update({ loadingArticles: true })
     this.render(this.state.get())
 
     try {
       const nextPage = state.articlesPage + 1
-      const newArticles = this.cache.getArticles(feed.id, true, nextPage, 50)
+      const newArticles = state.selectedFeedId
+        ? this.cache.getArticles(state.selectedFeedId, true, nextPage, 50)
+        : this.cache.getArticles(undefined, true, nextPage, 50)
 
       if (newArticles.length === 0) {
         this.state.update({
@@ -502,14 +651,13 @@ export class App {
   private toggleCategoryExpand(): void {
     const state = this.state.get()
     const categories = this.groupFeedsByCategory(state.feeds)
-    const currentFeedIndex = state.selectedFeedIndex
-    let currentIndex = 0
+    const currentFeedId = state.selectedFeedId
+
+    if (!currentFeedId) return
 
     for (const category of categories) {
-      const categoryStart = currentIndex
-      const categoryEnd = currentIndex + category.feeds.length
-
-      if (currentFeedIndex >= categoryStart && currentFeedIndex < categoryEnd) {
+      const feedInCategory = category.feeds.find((f) => f.id === currentFeedId)
+      if (feedInCategory) {
         const expanded = new Set(state.expandedCategories)
         if (expanded.has(category.id)) {
           expanded.delete(category.id)
@@ -519,8 +667,6 @@ export class App {
         this.state.update({ expandedCategories: expanded })
         break
       }
-
-      currentIndex = categoryEnd
     }
   }
 
@@ -591,8 +737,7 @@ export class App {
     }
 
     const state = this.state.get()
-    const feed = getSelectedFeed(state)
-    const results = this.cache.searchArticles(query.trim(), feed?.id)
+    const results = this.cache.searchArticles(query.trim(), state.selectedFeedId ?? undefined)
 
     this.state.update({
       searchQuery: query,
@@ -648,9 +793,9 @@ export class App {
         })
         this.render(this.state.get())
 
-        if (cachedFeeds.length > 0 && !this.initialFeedLoaded) {
-          this.initialFeedLoaded = true
-          await this.loadArticlesForFeed(0)
+        if (!this.initialLoadDone) {
+          this.initialLoadDone = true
+          await this.loadAllArticles()
         }
       }
 
@@ -691,8 +836,6 @@ export class App {
       const articles = await this.client.getArticles({ unreadOnly: true, count: 50 })
       this.cache.saveArticles(articles.items)
 
-      const currentState = this.state.get()
-
       this.state.update({
         feeds: enrichedFeeds,
         syncing: false,
@@ -702,14 +845,11 @@ export class App {
         isOnline: true,
       })
 
-      if (!this.initialFeedLoaded && enrichedFeeds.length > 0) {
-        this.initialFeedLoaded = true
-        await this.loadArticlesForFeed(0)
-      } else if (currentState.viewMode !== 'feeds') {
-        const selectedFeed = getSelectedFeed(currentState)
-        if (selectedFeed) {
-          await this.loadArticlesForFeed(currentState.selectedFeedIndex)
-        }
+      if (!this.initialLoadDone) {
+        this.initialLoadDone = true
+        await this.loadAllArticles()
+      } else {
+        await this.loadAllArticles()
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)
@@ -723,17 +863,38 @@ export class App {
     this.render(this.state.get())
   }
 
-  private async loadArticlesForFeed(feedIndex: number): Promise<void> {
-    const state = this.state.get()
-    const feed = state.feeds[feedIndex]
-    if (!feed) return
-
+  private async loadAllArticles(): Promise<void> {
     this.state.update({ loadingArticles: true })
     this.render(this.state.get())
 
     try {
-      const articles = this.cache.getArticles(feed.id, true, 0, 50)
-      const totalCount = this.cache.getArticleCount(feed.id, true)
+      const articles = this.cache.getArticles(undefined, true, 0, 50)
+      const totalCount = this.cache.getArticleCount(undefined, true)
+      this.state.update({
+        articles,
+        loadingArticles: false,
+        selectedArticleIndex: 0,
+        articlesPage: 0,
+        hasMoreArticles: articles.length < totalCount,
+      })
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
+      this.state.update({
+        loadingArticles: false,
+        errorMessage: msg,
+      })
+    }
+
+    this.render(this.state.get())
+  }
+
+  private async loadArticlesForFeed(feedId: string): Promise<void> {
+    this.state.update({ loadingArticles: true })
+    this.render(this.state.get())
+
+    try {
+      const articles = this.cache.getArticles(feedId, true, 0, 50)
+      const totalCount = this.cache.getArticleCount(feedId, true)
       this.state.update({
         articles,
         loadingArticles: false,
@@ -829,6 +990,10 @@ export class App {
 
   private shutdown(): void {
     this.destroyed = true
+    if (this.animationFrameId !== null) {
+      clearTimeout(this.animationFrameId)
+      this.animationFrameId = null
+    }
     if (this.syncInterval) {
       clearInterval(this.syncInterval)
     }

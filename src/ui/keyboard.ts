@@ -1,16 +1,16 @@
 import type { KeyEvent } from '@opentui/core'
-import type { ViewMode } from './state.ts'
+import type { NavigationDepth } from './state.ts'
 
 export type Action =
   | 'navDown'
   | 'navUp'
   | 'select'
   | 'goBack'
+  | 'goDeeper'
   | 'quit'
   | 'refresh'
   | 'markRead'
   | 'star'
-  | 'toggleSidebar'
   | 'toggleZenMode'
   | 'scrollDown'
   | 'scrollUp'
@@ -23,6 +23,7 @@ export type Action =
   | 'expandCollapse'
   | 'loadMore'
   | 'exportOpml'
+  | 'showAllArticles'
 
 export interface KeyBinding {
   key: string
@@ -34,8 +35,8 @@ const DEFAULT_KEYBINDINGS: KeyBinding[] = [
   { key: 'down', action: 'navDown' },
   { key: 'k', action: 'navUp' },
   { key: 'up', action: 'navUp' },
-  { key: 'l', action: 'select' },
-  { key: 'right', action: 'select' },
+  { key: 'l', action: 'goDeeper' },
+  { key: 'right', action: 'goDeeper' },
   { key: 'enter', action: 'select' },
   { key: 'h', action: 'goBack' },
   { key: 'left', action: 'goBack' },
@@ -44,7 +45,6 @@ const DEFAULT_KEYBINDINGS: KeyBinding[] = [
   { key: 'r', action: 'refresh' },
   { key: 'm', action: 'markRead' },
   { key: 's', action: 'star' },
-  { key: '\\', action: 'toggleSidebar' },
   { key: 'z', action: 'toggleZenMode' },
   { key: 'ctrl+d', action: 'pageDown' },
   { key: 'ctrl+u', action: 'pageUp' },
@@ -58,6 +58,7 @@ const DEFAULT_KEYBINDINGS: KeyBinding[] = [
   { key: 'tab', action: 'expandCollapse' },
   { key: 'n', action: 'loadMore' },
   { key: 'ctrl+e', action: 'exportOpml' },
+  { key: 'a', action: 'showAllArticles' },
 ]
 
 export class KeyboardHandler {
@@ -123,20 +124,12 @@ export class KeyboardHandler {
   }
 }
 
-export function resolveActionForContext(action: Action, viewMode: ViewMode): Action | null {
-  if (viewMode === 'reader') {
-    if (action === 'select') {
-      return null
-    }
-    if (action === 'navDown') {
-      return 'scrollDown'
-    }
-    if (action === 'navUp') {
-      return 'scrollUp'
-    }
-  }
-
-  if (viewMode !== 'reader') {
+export function resolveActionForContext(
+  action: Action,
+  navigationDepth: NavigationDepth
+): Action | null {
+  // At feeds depth, j/k navigate feeds, l/enter selects feed and goes deeper
+  if (navigationDepth === 'feeds') {
     if (
       action === 'scrollDown' ||
       action === 'scrollUp' ||
@@ -147,10 +140,39 @@ export function resolveActionForContext(action: Action, viewMode: ViewMode): Act
     ) {
       return null
     }
+    if (action === 'goDeeper') {
+      return 'goDeeper'
+    }
+    if (action === 'goBack') {
+      return null
+    }
   }
 
-  if (action === 'goBack' && viewMode === 'feeds') {
-    return null
+  // At content depth, j/k scroll content, h goes back to articles
+  if (navigationDepth === 'content') {
+    if (action === 'navDown') {
+      return 'navDown'
+    }
+    if (action === 'navUp') {
+      return 'navUp'
+    }
+    if (action === 'select') {
+      return null
+    }
+  }
+
+  // At articles depth, j/k navigate articles, l goes to content, h goes to feeds
+  if (navigationDepth === 'articles') {
+    if (
+      action === 'scrollDown' ||
+      action === 'scrollUp' ||
+      action === 'pageDown' ||
+      action === 'pageUp' ||
+      action === 'scrollToTop' ||
+      action === 'scrollToBottom'
+    ) {
+      return null
+    }
   }
 
   return action

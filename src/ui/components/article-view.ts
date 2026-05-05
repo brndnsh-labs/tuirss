@@ -1,6 +1,19 @@
-import { BoxRenderable, TextRenderable, ScrollBoxRenderable, TextAttributes } from '@opentui/core'
+import {
+  BoxRenderable,
+  TextRenderable,
+  ScrollBoxRenderable,
+  TextAttributes,
+  t,
+  fg,
+  bold,
+  dim,
+  StyledText,
+  stringToStyledText,
+  type TextChunk,
+} from '@opentui/core'
 import type { RenderContext } from '@opentui/core'
 import type { AppState } from '../state.ts'
+import { getDisplayArticles } from '../state.ts'
 import type { Article } from '../../api/types.ts'
 
 const COLORS = {
@@ -10,37 +23,99 @@ const COLORS = {
   textMuted: '#666666',
   accent: '#7aa2f7',
   border: '#3b4261',
+  borderFocused: '#7aa2f7',
+  borderUnfocused: '#24283b',
   success: '#9ece6a',
   warning: '#e0af68',
   star: '#e0af68',
+  selectedBg: '#2a2a4a',
+  selectedFg: '#ffffff',
+  unreadDot: '#7aa2f7',
 }
 
 export class ArticleView {
   readonly container: BoxRenderable
+  readonly articleListContainer: BoxRenderable
+  readonly contentContainer: BoxRenderable
+  private articleListText: TextRenderable
   private contentText: TextRenderable
   private scrollBox: ScrollBoxRenderable | null = null
   private ctx: RenderContext
+  private contentOnlyMode = false
 
   constructor(ctx: RenderContext) {
     this.ctx = ctx
+
     this.container = new BoxRenderable(ctx, {
-      id: 'article-view-container',
-      border: true,
-      borderStyle: 'rounded',
-      borderColor: COLORS.border,
-      title: ' Articles ',
-      titleAlignment: 'left',
+      id: 'article-view',
+      flexDirection: 'row',
+      flexGrow: 1,
       shouldFill: true,
       backgroundColor: COLORS.background,
     })
 
-    this.contentText = new TextRenderable(ctx, {
-      id: 'article-view-text',
+    this.articleListContainer = new BoxRenderable(ctx, {
+      id: 'article-list-container',
+      border: true,
+      borderStyle: 'rounded',
+      borderColor: COLORS.borderFocused,
+      title: ' Articles ',
+      titleAlignment: 'left',
+      shouldFill: true,
+      backgroundColor: COLORS.background,
+      width: 35,
+    })
+
+    this.articleListText = new TextRenderable(ctx, {
+      id: 'article-list-text',
       fg: COLORS.text,
       wrapMode: 'word',
     })
 
-    this.container.add(this.contentText)
+    this.articleListContainer.add(this.articleListText)
+
+    this.contentContainer = new BoxRenderable(ctx, {
+      id: 'content-container',
+      border: true,
+      borderStyle: 'rounded',
+      borderColor: COLORS.borderUnfocused,
+      title: ' Content ',
+      titleAlignment: 'left',
+      shouldFill: true,
+      backgroundColor: COLORS.background,
+      flexGrow: 1,
+    })
+
+    this.contentText = new TextRenderable(ctx, {
+      id: 'content-text',
+      fg: COLORS.text,
+      wrapMode: 'word',
+    })
+
+    this.contentContainer.add(this.contentText)
+
+    this.container.add(this.articleListContainer)
+    this.container.add(this.contentContainer)
+  }
+
+  showArticleListAndContent(): void {
+    this.contentOnlyMode = false
+    this.articleListContainer.visible = true
+    this.contentContainer.visible = true
+    this.contentContainer.flexGrow = 1
+  }
+
+  showContentOnly(): void {
+    this.contentOnlyMode = true
+    this.articleListContainer.visible = false
+    this.contentContainer.visible = true
+    this.contentContainer.width = '100%'
+    this.contentContainer.flexGrow = 1
+  }
+
+  setArticleListWidth(width: number): void {
+    this.articleListContainer.width = width
+    this.articleListContainer.flexGrow = 0
   }
 
   update(state: AppState): void {
@@ -48,122 +123,123 @@ export class ArticleView {
       return
     }
 
-    const innerWidth = this.container.width - 2
-    if (innerWidth > 0) {
-      this.contentText.width = innerWidth
+    const innerListWidth = this.articleListContainer.width - 2
+    if (innerListWidth > 0) {
+      this.articleListText.width = innerListWidth
     }
 
-    if (state.viewMode === 'reader') {
-      this.renderReader(state)
-    } else {
-      this.renderList(state)
+    const innerContentWidth = this.contentContainer.width - 2
+    if (innerContentWidth > 0) {
+      this.contentText.width = innerContentWidth
     }
+
+    this.renderArticleList(state)
+    this.renderContent(state)
   }
 
-  private renderList(state: AppState): void {
-    if (state.isSearching) {
-      this.container.title = ' Search '
-      this.container.borderStyle = 'rounded'
-
-      if (this.scrollBox) {
-        this.scrollBox.visible = false
-        this.contentText.visible = true
-      }
-
-      this.contentText.attributes = 0
-      this.contentText.fg = COLORS.text
-      this.contentText.content = `Search: ${state.searchQuery}_`
+  private renderArticleList(state: AppState): void {
+    if (!this.articleListContainer.visible) {
       return
     }
 
-    const articles = state.filteredArticles.length > 0 ? state.filteredArticles : state.articles
-    const isFiltered = state.filteredArticles.length > 0
-
-    if (isFiltered) {
-      this.container.title = ` Search: "${state.searchQuery}" (${articles.length}) `
-    } else {
-      this.container.title = ' Articles '
+    if (state.isSearching) {
+      this.articleListContainer.title = ' Search '
+      this.articleListText.attributes = 0
+      this.articleListText.fg = COLORS.text
+      this.articleListText.content = `Search: ${state.searchQuery}_`
+      return
     }
-    this.container.borderStyle = 'rounded'
 
-    if (this.scrollBox) {
-      this.scrollBox.visible = false
-      this.contentText.visible = true
+    const articles = getDisplayArticles(state)
+
+    if (state.selectedFeedId) {
+      const feed = state.feeds.find((f) => f.id === state.selectedFeedId)
+      this.articleListContainer.title = feed ? ` ${feed.title} ` : ' Articles '
+    } else {
+      this.articleListContainer.title = ' All Articles '
     }
 
     if (state.loadingArticles) {
-      this.contentText.content = 'Loading articles...'
-      this.contentText.fg = COLORS.textDim
-      this.contentText.attributes = TextAttributes.DIM
+      this.articleListText.content = t`${dim('Loading articles...')}`
+      this.articleListText.fg = COLORS.textDim
+      this.articleListText.attributes = TextAttributes.DIM
       return
     }
 
     if (articles.length === 0) {
-      if (isFiltered) {
-        this.contentText.content = `No articles found matching "${state.searchQuery}"`
+      if (state.filteredArticles.length > 0) {
+        this.articleListText.content = t`${dim(`No articles matching "${state.searchQuery}"`)}`
       } else {
-        const feed = state.feeds[state.selectedFeedIndex]
-        this.contentText.content = feed ? `No unread articles in ${feed.title}` : 'No articles'
+        this.articleListText.content = t`${dim('No unread articles')}`
       }
-      this.contentText.fg = COLORS.textDim
-      this.contentText.attributes = TextAttributes.DIM
+      this.articleListText.fg = COLORS.textDim
+      this.articleListText.attributes = TextAttributes.DIM
       return
     }
 
-    this.contentText.attributes = 0
-    this.contentText.fg = COLORS.text
+    this.articleListText.attributes = 0
+    this.articleListText.fg = COLORS.text
 
-    let content = ''
+    const listWidth = this.articleListContainer.width || 35
+    const maxTitleLen = Math.max(10, listWidth - 8)
+
+    const allChunks: TextChunk[] = []
+
     for (let i = 0; i < articles.length; i++) {
       const article = articles[i] as Article
       const isRead = article.categories?.includes('user/-/state/com.google/read')
       const isStarred = article.categories?.includes('user/-/state/com.google/starred')
       const isSelected = i === state.selectedArticleIndex
 
-      if (content) content += '\n'
+      const title = article.title || 'Untitled'
+      const truncatedTitle = truncate(title, maxTitleLen)
+
+      if (i > 0) {
+        allChunks.push(...stringToStyledText('\n').chunks)
+      }
 
       if (isSelected) {
-        content += '▸ '
+        const line = t`${bold(fg(COLORS.accent)('▸'))} ${!isRead ? fg(COLORS.unreadDot)('●') + ' ' : '  '}${isStarred ? fg(COLORS.star)('★') + ' ' : '  '}${bold(fg(COLORS.selectedFg)(truncatedTitle))}`
+        allChunks.push(...line.chunks)
       } else {
-        content += '  '
-      }
-
-      if (!isRead) {
-        content += '● '
-      } else {
-        content += '  '
-      }
-
-      if (isStarred) {
-        content += '★ '
-      } else {
-        content += '  '
-      }
-
-      content += article.title || 'Untitled'
-
-      if (article.published) {
-        content += `  ${new Date(article.published * 1000).toLocaleDateString()}`
+        const unreadPart = !isRead ? fg(COLORS.unreadDot)('●') + ' ' : dim('· ')
+        const starPart = isStarred ? fg(COLORS.star)('★') + ' ' : '  '
+        const titlePart = isRead ? dim(truncatedTitle) : truncatedTitle
+        const line = t`  ${unreadPart}${starPart}${titlePart}`
+        allChunks.push(...line.chunks)
       }
     }
 
     if (state.hasMoreArticles && !state.loadingArticles) {
-      content += '\n\n  ── Press n to load more ──'
+      allChunks.push(...stringToStyledText('\n\n').chunks)
+      allChunks.push(...t`${dim('  ── Press n to load more ──')}`.chunks)
     }
 
-    this.contentText.content = content
+    this.articleListText.content = new StyledText(allChunks)
   }
 
-  private renderReader(state: AppState): void {
-    const articles = state.filteredArticles.length > 0 ? state.filteredArticles : state.articles
-    const article = articles[state.selectedArticleIndex]
-    if (!article) {
-      this.renderList(state)
+  private renderContent(state: AppState): void {
+    if (!this.contentContainer.visible) {
       return
     }
 
-    this.container.title = state.zenMode ? '' : ` ${truncate(article.title, 40)} `
-    this.container.titleAlignment = 'left'
+    const articles = getDisplayArticles(state)
+    const article = articles[state.selectedArticleIndex]
+
+    if (!article) {
+      this.contentContainer.title = ' Content '
+      this.contentText.visible = true
+      if (this.scrollBox) {
+        this.scrollBox.visible = false
+      }
+      this.contentText.content = 'Select an article to read'
+      this.contentText.fg = COLORS.textDim
+      this.contentText.attributes = TextAttributes.DIM
+      return
+    }
+
+    this.contentContainer.title = state.zenMode ? '' : ` ${truncate(article.title, 40)} `
+    this.contentContainer.titleAlignment = 'left'
 
     this.contentText.visible = false
 
@@ -187,7 +263,7 @@ export class ArticleView {
       viewportCulling: true,
     })
 
-    this.container.add(this.scrollBox)
+    this.contentContainer.add(this.scrollBox)
   }
 
   private updateScrollBoxContent(state: AppState, article: Article): void {
@@ -234,6 +310,9 @@ export class ArticleView {
       if (article.author) {
         metaParts.push(`by ${article.author}`)
       }
+      if (article.origin?.title) {
+        metaParts.push(`from ${article.origin.title}`)
+      }
       if (article.published) {
         const date = new Date(article.published * 1000)
         metaParts.push(
@@ -261,7 +340,8 @@ export class ArticleView {
         this.scrollBox.add(metaText)
       }
 
-      separatorText.content = '\n' + '─'.repeat(Math.min(60, this.container.width - 4)) + '\n'
+      separatorText.content =
+        '\n' + '─'.repeat(Math.min(60, this.contentContainer.width - 4)) + '\n'
       this.scrollBox.add(separatorText)
     }
 

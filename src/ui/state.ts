@@ -1,14 +1,14 @@
 import type { Feed, Article } from '../api/types.ts'
 
-export type ViewMode = 'feeds' | 'articles' | 'reader'
+export type NavigationDepth = 'content' | 'articles' | 'feeds'
 export type LayoutMode = 'single' | 'compact' | 'wide'
 
 export interface AppState {
-  viewMode: ViewMode
+  navigationDepth: NavigationDepth
 
   feeds: Feed[]
   articles: Article[]
-  selectedFeedIndex: number
+  selectedFeedId: string | null
   selectedArticleIndex: number
 
   loadingFeeds: boolean
@@ -18,7 +18,6 @@ export interface AppState {
   statusMessage: string
   errorMessage: string | null
 
-  sidebarCollapsed: boolean
   layoutMode: LayoutMode
   terminalWidth: number
   terminalHeight: number
@@ -40,17 +39,16 @@ export interface AppState {
 
 export function createInitialState(): AppState {
   return {
-    viewMode: 'feeds',
+    navigationDepth: 'content',
     feeds: [],
     articles: [],
-    selectedFeedIndex: 0,
+    selectedFeedId: null,
     selectedArticleIndex: 0,
     loadingFeeds: false,
     loadingArticles: false,
     syncing: false,
     statusMessage: '',
     errorMessage: null,
-    sidebarCollapsed: false,
     layoutMode: 'wide',
     terminalWidth: 120,
     terminalHeight: 30,
@@ -69,8 +67,8 @@ export function createInitialState(): AppState {
 }
 
 export function getSelectedFeed(state: AppState): Feed | null {
-  if (state.feeds.length === 0) return null
-  return state.feeds[state.selectedFeedIndex] ?? null
+  if (!state.selectedFeedId) return null
+  return state.feeds.find((f) => f.id === state.selectedFeedId) ?? null
 }
 
 export function getSelectedArticle(state: AppState): Article | null {
@@ -78,26 +76,8 @@ export function getSelectedArticle(state: AppState): Article | null {
   return state.articles[state.selectedArticleIndex] ?? null
 }
 
-export function getNextViewMode(viewMode: ViewMode): ViewMode | null {
-  switch (viewMode) {
-    case 'feeds':
-      return 'articles'
-    case 'articles':
-      return 'reader'
-    default:
-      return null
-  }
-}
-
-export function getPreviousViewMode(viewMode: ViewMode): ViewMode | null {
-  switch (viewMode) {
-    case 'reader':
-      return 'articles'
-    case 'articles':
-      return 'feeds'
-    default:
-      return null
-  }
+export function getDisplayArticles(state: AppState): Article[] {
+  return state.filteredArticles.length > 0 ? state.filteredArticles : state.articles
 }
 
 export type StateListener = (state: AppState) => void

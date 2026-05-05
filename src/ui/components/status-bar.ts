@@ -63,27 +63,19 @@ export class StatusBar {
 
     let shortcuts = 'j/k:navigate'
 
-    switch (state.viewMode) {
-      case 'feeds':
-        shortcuts += '  l/Enter:articles'
+    switch (state.navigationDepth) {
+      case 'content':
+        shortcuts += '  h:feeds  z:zen'
         break
       case 'articles':
-        shortcuts += '  l/Enter:read  h:back  /:search'
+        shortcuts += '  l:content  h:feeds'
         break
-      case 'reader':
-        shortcuts += '  h:back  z:zen'
+      case 'feeds':
+        shortcuts += '  l/Enter:select  a:all'
         break
     }
 
-    if (state.viewMode !== 'feeds') {
-      shortcuts += '  m:read  s:star'
-    }
-
-    shortcuts += '  r:refresh  ^e:export  q:quit'
-
-    if (state.layoutMode !== 'single' && state.viewMode !== 'reader') {
-      shortcuts += '  \\:sidebar'
-    }
+    shortcuts += '  m:read  s:star  /:search  r:refresh  q:quit'
 
     content += `  │  ${shortcuts}`
 
