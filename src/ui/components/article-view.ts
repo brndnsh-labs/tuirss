@@ -27,13 +27,17 @@ export class ArticleView {
   }
 
   update(state: AppState): void {
+    if (!this.container.visible) {
+      return
+    }
+
     const innerWidth = this.container.width - 2
     if (innerWidth > 0) {
       this.contentText.width = innerWidth
     }
 
-    if (state.articleViewMode === 'detail') {
-      this.renderDetail(state)
+    if (state.viewMode === 'reader') {
+      this.renderReader(state)
     } else {
       this.renderList(state)
     }
@@ -41,12 +45,6 @@ export class ArticleView {
 
   private renderList(state: AppState): void {
     this.container.title = ' Articles '
-
-    if (state.activePane === 'feeds' && state.articles.length === 0) {
-      this.contentText.content = 'Select a feed to view articles'
-      this.contentText.fg = '#888888'
-      return
-    }
 
     if (state.loadingArticles) {
       this.contentText.content = 'Loading articles...'
@@ -56,7 +54,7 @@ export class ArticleView {
 
     if (state.articles.length === 0) {
       const feed = state.feeds[state.selectedFeedIndex]
-      this.contentText.content = feed ? `No articles in ${feed.title}` : 'No articles'
+      this.contentText.content = feed ? `No unread articles in ${feed.title}` : 'No articles'
       this.contentText.fg = '#888888'
       return
     }
@@ -69,8 +67,7 @@ export class ArticleView {
 
       const readMarker = isRead ? '  ' : '● '
       const starMarker = isStarred ? '★ ' : '  '
-      const prefix =
-        i === state.selectedArticleIndex && state.activePane === 'articles' ? '▸ ' : '  '
+      const prefix = i === state.selectedArticleIndex ? '▸ ' : '  '
       const title = article.title || 'Untitled'
       const dateStr = article.published
         ? new Date(article.published * 1000).toLocaleDateString()
@@ -83,38 +80,40 @@ export class ArticleView {
     this.contentText.fg = '#cccccc'
   }
 
-  private renderDetail(state: AppState): void {
+  private renderReader(state: AppState): void {
     const article = state.articles[state.selectedArticleIndex]
     if (!article) {
       this.renderList(state)
       return
     }
 
-    this.container.title = ` ${truncate(article.title, 40)} `
+    this.container.title = state.zenMode ? '' : ` ${truncate(article.title, 40)} `
 
     const parts: string[] = []
 
-    parts.push(article.title || 'Untitled')
-    parts.push('')
+    if (!state.zenMode) {
+      parts.push(article.title || 'Untitled')
+      parts.push('')
 
-    const metaParts: string[] = []
-    if (article.author) metaParts.push(`By ${article.author}`)
-    if (article.published) {
-      const date = new Date(article.published * 1000)
-      metaParts.push(date.toLocaleDateString())
+      const metaParts: string[] = []
+      if (article.author) metaParts.push(`By ${article.author}`)
+      if (article.published) {
+        const date = new Date(article.published * 1000)
+        metaParts.push(date.toLocaleDateString())
+      }
+      const isRead = article.categories?.includes('user/-/state/com.google/read')
+      const isStarred = article.categories?.includes('user/-/state/com.google/starred')
+      const statusIcons: string[] = []
+      if (isRead) statusIcons.push('✓ Read')
+      if (isStarred) statusIcons.push('★ Starred')
+      if (statusIcons.length > 0) metaParts.push(statusIcons.join(' | '))
+
+      if (metaParts.length > 0) {
+        parts.push(metaParts.join(' │ '))
+      }
+
+      parts.push('─'.repeat(Math.min(60, this.container.width - 4)))
     }
-    const isRead = article.categories?.includes('user/-/state/com.google/read')
-    const isStarred = article.categories?.includes('user/-/state/com.google/starred')
-    const statusIcons: string[] = []
-    if (isRead) statusIcons.push('✓ Read')
-    if (isStarred) statusIcons.push('★ Starred')
-    if (statusIcons.length > 0) metaParts.push(statusIcons.join(' | '))
-
-    if (metaParts.length > 0) {
-      parts.push(metaParts.join(' │ '))
-    }
-
-    parts.push('─'.repeat(60))
 
     const content = article.content || article.summary?.content || 'No content available'
     parts.push(stripHtml(content))

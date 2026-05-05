@@ -31,7 +31,23 @@ export class FeedList {
     if (innerWidth > 0) {
       this.contentText.width = innerWidth
     }
-    this.contentText.content = this.renderContent(state)
+
+    if (!this.container.visible) {
+      return
+    }
+
+    if (state.sidebarCollapsed) {
+      this.container.title = '▶'
+      this.contentText.content = this.renderCollapsedContent(state)
+    } else {
+      this.container.title = ' Feeds '
+      this.contentText.content = this.renderContent(state)
+    }
+  }
+
+  private renderCollapsedContent(state: AppState): string {
+    const totalUnread = state.feeds.reduce((sum, f) => sum + (f.unreadCount ?? 0), 0)
+    return totalUnread > 0 ? `●\n${totalUnread}` : '●'
   }
 
   private renderContent(state: AppState): string {
@@ -46,7 +62,7 @@ export class FeedList {
     const lines: string[] = []
     for (let i = 0; i < state.feeds.length; i++) {
       const feed = state.feeds[i] as Feed
-      const isSelected = i === state.selectedFeedIndex && state.activePane === 'feeds'
+      const isSelected = i === state.selectedFeedIndex && state.viewMode === 'feeds'
       const unread = feed.unreadCount ?? 0
       const unreadBadge = unread > 0 ? ` (${unread})` : ''
       const prefix = isSelected ? '▸ ' : '  '

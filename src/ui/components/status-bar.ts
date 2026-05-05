@@ -30,10 +30,31 @@ export class StatusBar {
     const totalUnread = state.feeds.reduce((sum, f) => sum + (f.unreadCount ?? 0), 0)
     parts.push(`Unread: ${totalUnread}`)
 
-    const paneLabel = state.activePane === 'feeds' ? 'Feeds' : 'Articles'
-    parts.push(`[${paneLabel}]`)
+    const shortcuts: string[] = ['j/k:navigate']
 
-    parts.push('j/k:navigate  h/l:switch  Enter:select  m:read  s:star  r:refresh  q:quit')
+    switch (state.viewMode) {
+      case 'feeds':
+        shortcuts.push('l/Enter:articles')
+        break
+      case 'articles':
+        shortcuts.push('l/Enter:read', 'h:back')
+        break
+      case 'reader':
+        shortcuts.push('h:back', 'z:zen')
+        break
+    }
+
+    if (state.viewMode !== 'feeds') {
+      shortcuts.push('m:read', 's:star')
+    }
+
+    shortcuts.push('r:refresh', 'q:quit')
+
+    if (state.layoutMode !== 'single' && state.viewMode !== 'reader') {
+      shortcuts.push('\\:sidebar')
+    }
+
+    parts.push(shortcuts.join('  '))
 
     this.text.content = parts.join('  │  ')
   }
