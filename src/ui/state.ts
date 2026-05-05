@@ -1,33 +1,34 @@
 import type { Feed, Article } from '../api/types.ts'
 
-export type Pane = 'feeds' | 'articles'
-export type ArticleViewMode = 'list' | 'detail'
+export type ViewMode = 'feeds' | 'articles' | 'reader'
+export type LayoutMode = 'single' | 'compact' | 'wide'
 
 export interface AppState {
-  // Navigation
-  activePane: Pane
-  articleViewMode: ArticleViewMode
+  viewMode: ViewMode
 
-  // Data
   feeds: Feed[]
   articles: Article[]
   selectedFeedIndex: number
   selectedArticleIndex: number
 
-  // Loading states
   loadingFeeds: boolean
   loadingArticles: boolean
   syncing: boolean
 
-  // Status message
   statusMessage: string
   errorMessage: string | null
+
+  sidebarCollapsed: boolean
+  layoutMode: LayoutMode
+  terminalWidth: number
+  terminalHeight: number
+
+  zenMode: boolean
 }
 
 export function createInitialState(): AppState {
   return {
-    activePane: 'feeds',
-    articleViewMode: 'list',
+    viewMode: 'feeds',
     feeds: [],
     articles: [],
     selectedFeedIndex: 0,
@@ -37,6 +38,11 @@ export function createInitialState(): AppState {
     syncing: false,
     statusMessage: '',
     errorMessage: null,
+    sidebarCollapsed: false,
+    layoutMode: 'wide',
+    terminalWidth: 120,
+    terminalHeight: 30,
+    zenMode: false,
   }
 }
 
@@ -48,6 +54,28 @@ export function getSelectedFeed(state: AppState): Feed | null {
 export function getSelectedArticle(state: AppState): Article | null {
   if (state.articles.length === 0) return null
   return state.articles[state.selectedArticleIndex] ?? null
+}
+
+export function getNextViewMode(viewMode: ViewMode): ViewMode | null {
+  switch (viewMode) {
+    case 'feeds':
+      return 'articles'
+    case 'articles':
+      return 'reader'
+    default:
+      return null
+  }
+}
+
+export function getPreviousViewMode(viewMode: ViewMode): ViewMode | null {
+  switch (viewMode) {
+    case 'reader':
+      return 'articles'
+    case 'articles':
+      return 'feeds'
+    default:
+      return null
+  }
 }
 
 export type StateListener = (state: AppState) => void
