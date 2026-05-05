@@ -54,20 +54,20 @@ export class Cache {
 
   saveFeeds(feeds: Feed[]): void {
     const insert = this.db.query(`
-      INSERT OR REPLACE INTO feeds 
+      INSERT OR REPLACE INTO feeds
       (id, title, url, html_url, category_id, category_name, unread_count, last_updated)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     for (const feed of feeds) {
       insert.run(
-        feed.id,
-        feed.title,
-        feed.url,
-        feed.htmlUrl,
-        feed.categories[0]?.id || null,
-        feed.categories[0]?.label || null,
-        feed.unreadCount || 0,
+        feed.id ?? null,
+        feed.title ?? null,
+        feed.url ?? null,
+        feed.htmlUrl ?? null,
+        feed.categories?.[0]?.id ?? null,
+        feed.categories?.[0]?.label ?? null,
+        feed.unreadCount ?? 0,
         Date.now()
       )
     }
@@ -88,7 +88,7 @@ export class Cache {
 
   saveArticles(articles: Article[]): void {
     const insert = this.db.query(`
-      INSERT OR REPLACE INTO articles 
+      INSERT OR REPLACE INTO articles
       (id, feed_id, title, author, content, summary, url, published_at, is_read, is_starred, fetched_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
@@ -98,14 +98,14 @@ export class Cache {
       const isStarred = article.categories.includes('user/-/state/com.google/starred')
 
       insert.run(
-        article.id,
-        article.origin.streamId,
-        article.title,
-        article.author || null,
-        article.content || null,
-        article.summary || null,
-        article.alternate[0]?.href || null,
-        article.published,
+        article.id ?? null,
+        article.origin?.streamId ?? null,
+        article.title ?? null,
+        article.author ?? null,
+        article.content ?? null,
+        article.summary ?? null,
+        article.alternate?.[0]?.href ?? null,
+        article.published ?? null,
         isRead ? 1 : 0,
         isStarred ? 1 : 0,
         Date.now()
