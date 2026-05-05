@@ -24,6 +24,21 @@ export interface AppState {
   terminalHeight: number
 
   zenMode: boolean
+
+  readerScrollY: number
+
+  searchQuery: string
+  isSearching: boolean
+  filteredArticles: Article[]
+
+  expandedCategories: Set<string>
+  selectedCategory: string | null
+
+  articlesPage: number
+  hasMoreArticles: boolean
+
+  isOnline: boolean
+  lastSyncTime: number | null
 }
 
 export function createInitialState(): AppState {
@@ -43,6 +58,18 @@ export function createInitialState(): AppState {
     terminalWidth: 120,
     terminalHeight: 30,
     zenMode: false,
+    readerScrollY: 0,
+    searchQuery: '',
+    isSearching: false,
+    filteredArticles: [],
+    expandedCategories: new Set(['__all__']),
+    selectedCategory: null,
+
+    articlesPage: 0,
+    hasMoreArticles: true,
+
+    isOnline: true,
+    lastSyncTime: null,
   }
 }
 

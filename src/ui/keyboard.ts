@@ -12,6 +12,17 @@ export type Action =
   | 'star'
   | 'toggleSidebar'
   | 'toggleZenMode'
+  | 'scrollDown'
+  | 'scrollUp'
+  | 'pageDown'
+  | 'pageUp'
+  | 'scrollToTop'
+  | 'scrollToBottom'
+  | 'search'
+  | 'clearSearch'
+  | 'expandCollapse'
+  | 'loadMore'
+  | 'exportOpml'
 
 export interface KeyBinding {
   key: string
@@ -35,6 +46,18 @@ const DEFAULT_KEYBINDINGS: KeyBinding[] = [
   { key: 's', action: 'star' },
   { key: '\\', action: 'toggleSidebar' },
   { key: 'z', action: 'toggleZenMode' },
+  { key: 'ctrl+d', action: 'pageDown' },
+  { key: 'ctrl+u', action: 'pageUp' },
+  { key: 'pagedown', action: 'pageDown' },
+  { key: 'pageup', action: 'pageUp' },
+  { key: 'g', action: 'scrollToTop' },
+  { key: 'G', action: 'scrollToBottom' },
+  { key: 'space', action: 'pageDown' },
+  { key: '/', action: 'search' },
+  { key: 'ctrl+c', action: 'clearSearch' },
+  { key: 'tab', action: 'expandCollapse' },
+  { key: 'n', action: 'loadMore' },
+  { key: 'ctrl+e', action: 'exportOpml' },
 ]
 
 export class KeyboardHandler {
@@ -72,21 +95,58 @@ export class KeyboardHandler {
 
   resolveAction(key: KeyEvent): Action | null {
     const keyName = key.name
+
     for (const binding of this.bindings) {
-      if (binding.key === keyName && !key.ctrl && !key.meta) {
-        return binding.action
+      const bindingKey = binding.key
+
+      if (bindingKey.includes('+')) {
+        const parts = bindingKey.split('+')
+        const hasCtrl = parts.includes('ctrl')
+        const hasShift = parts.includes('shift')
+        const baseKey = parts[parts.length - 1]
+
+        if (key.name === baseKey && key.ctrl === hasCtrl && key.shift === hasShift && !key.meta) {
+          return binding.action
+        }
+      } else {
+        if (bindingKey === keyName && !key.ctrl && !key.meta) {
+          return binding.action
+        }
       }
     }
+
     if (key.ctrl && keyName === 'c') {
       return 'quit'
     }
+
     return null
   }
 }
 
 export function resolveActionForContext(action: Action, viewMode: ViewMode): Action | null {
-  if (action === 'select' && viewMode === 'reader') {
-    return null
+  if (viewMode === 'reader') {
+    if (action === 'select') {
+      return null
+    }
+    if (action === 'navDown') {
+      return 'scrollDown'
+    }
+    if (action === 'navUp') {
+      return 'scrollUp'
+    }
+  }
+
+  if (viewMode !== 'reader') {
+    if (
+      action === 'scrollDown' ||
+      action === 'scrollUp' ||
+      action === 'pageDown' ||
+      action === 'pageUp' ||
+      action === 'scrollToTop' ||
+      action === 'scrollToBottom'
+    ) {
+      return null
+    }
   }
 
   if (action === 'goBack' && viewMode === 'feeds') {
