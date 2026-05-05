@@ -63,11 +63,11 @@ quit = "q"
 
 function createDefaultConfig(path: string): void {
   const dir = dirname(path)
-  
+
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true })
   }
-  
+
   writeFileSync(path, DEFAULT_CONFIG_TEMPLATE, 'utf-8')
 }
 
@@ -80,56 +80,52 @@ interface ParsedToml {
 
 export function loadConfig(configPath?: string): Config {
   const path = configPath || getConfigPath()
-  
+
   if (!existsSync(path)) {
     createDefaultConfig(path)
     throw new ConfigError(
       `Welcome to TUIRSS!\n\n` +
-      `A default configuration file has been created at:\n` +
-      `  ${path}\n\n` +
-      `Please edit this file and add your FreshRSS credentials:\n` +
-      `  1. Set your server URL (e.g., http://docker01:8080/api/)\n` +
-      `  2. Set your username\n` +
-      `  3. Set your API password (from FreshRSS Profile settings)\n\n` +
-      `Then run TUIRSS again.`
+        `A default configuration file has been created at:\n` +
+        `  ${path}\n\n` +
+        `Please edit this file and add your FreshRSS credentials:\n` +
+        `  1. Set your server URL (e.g., http://docker01:8080/api/)\n` +
+        `  2. Set your username\n` +
+        `  3. Set your API password (from FreshRSS Profile settings)\n\n` +
+        `Then run TUIRSS again.`
     )
   }
-  
+
   try {
     const content = readFileSync(path, 'utf-8')
     const parsed = parse(content) as ParsedToml
-    
+
     const merged: Config = {
       server: { ...defaultConfig.server, ...(parsed.server || {}) },
       sync: { ...defaultConfig.sync, ...(parsed.sync || {}) },
       ui: { ...defaultConfig.ui, ...(parsed.ui || {}) },
       keybindings: { ...defaultConfig.keybindings, ...(parsed.keybindings || {}) },
     }
-    
+
     const result = configSchema.safeParse(merged)
-    
+
     if (!result.success) {
-      const issues = result.error.issues.map((e) => 
-        `  - ${e.path.join('.')}: ${e.message}`
-      ).join('\n')
-      
-      throw new ConfigError(
-        `Invalid configuration in ${path}:\n${issues}`
-      )
+      const issues = result.error.issues
+        .map((e) => `  - ${e.path.join('.')}: ${e.message}`)
+        .join('\n')
+
+      throw new ConfigError(`Invalid configuration in ${path}:\n${issues}`)
     }
-    
+
     return result.data
   } catch (error) {
     if (error instanceof ConfigError) {
       throw error
     }
-    
+
     if (error instanceof Error && error.message.includes('TOML')) {
-      throw new ConfigError(
-        `Failed to parse TOML in ${path}:\n${error.message}`
-      )
+      throw new ConfigError(`Failed to parse TOML in ${path}:\n${error.message}`)
     }
-    
+
     throw new ConfigError(
       `Failed to load configuration from ${path}:\n${error instanceof Error ? error.message : String(error)}`
     )

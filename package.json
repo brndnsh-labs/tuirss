@@ -8,6 +8,11 @@
     "dev": "bun run src/main.ts",
     "build": "bun build src/main.ts --outdir ./dist",
     "typecheck": "tsc --noEmit",
+    "lint": "oxlint . --import-plugin",
+    "lint:fix": "oxlint . --import-plugin --fix",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\"",
+    "check": "bun run typecheck && bun run lint && bun run format:check",
     "prepare": "git config core.hooksPath .husky"
   },
   "keywords": ["rss", "freshrss", "tui", "terminal", "reader"],
@@ -15,7 +20,9 @@
   "license": "MIT",
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/node": "latest"
+    "@types/node": "latest",
+    "oxlint": "^1.62.0",
+    "prettier": "^3.8.3"
   },
   "peerDependencies": {
     "typescript": "^5"

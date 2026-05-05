@@ -52,17 +52,16 @@ export class FreshRSSClient {
       throw new Error('Not authenticated. Call login() first.')
     }
     return {
-      'Authorization': `GoogleLogin auth=${this.authToken}`,
+      Authorization: `GoogleLogin auth=${this.authToken}`,
     }
   }
 
   private async ensureWriteToken(): Promise<void> {
     if (this.writeToken) return
 
-    const response = await fetch(
-      `${this.baseUrl}/reader/api/0/token`,
-      { headers: this.authHeaders() }
-    )
+    const response = await fetch(`${this.baseUrl}/reader/api/0/token`, {
+      headers: this.authHeaders(),
+    })
 
     if (!response.ok) {
       throw new Error(`Failed to get write token: ${response.status}`)
@@ -72,39 +71,39 @@ export class FreshRSSClient {
   }
 
   async getFeeds(): Promise<Feed[]> {
-    const response = await fetch(
-      `${this.baseUrl}/reader/api/0/subscription/list?output=json`,
-      { headers: this.authHeaders() }
-    )
+    const response = await fetch(`${this.baseUrl}/reader/api/0/subscription/list?output=json`, {
+      headers: this.authHeaders(),
+    })
 
     if (!response.ok) {
       throw new Error(`Failed to fetch feeds: ${response.status}`)
     }
 
-    const data = await response.json() as { subscriptions?: Feed[] }
+    const data = (await response.json()) as { subscriptions?: Feed[] }
     return data.subscriptions || []
   }
 
   async getUnreadCounts(): Promise<UnreadCount[]> {
-    const response = await fetch(
-      `${this.baseUrl}/reader/api/0/unread-count?output=json`,
-      { headers: this.authHeaders() }
-    )
+    const response = await fetch(`${this.baseUrl}/reader/api/0/unread-count?output=json`, {
+      headers: this.authHeaders(),
+    })
 
     if (!response.ok) {
       throw new Error(`Failed to fetch unread counts: ${response.status}`)
     }
 
-    const data = await response.json() as { unreadcounts?: UnreadCount[] }
+    const data = (await response.json()) as { unreadcounts?: UnreadCount[] }
     return data.unreadcounts || []
   }
 
-  async getArticles(options: {
-    streamId?: string
-    unreadOnly?: boolean
-    count?: number
-    continuation?: string
-  } = {}): Promise<{ items: Article[]; continuation?: string }> {
+  async getArticles(
+    options: {
+      streamId?: string
+      unreadOnly?: boolean
+      count?: number
+      continuation?: string
+    } = {}
+  ): Promise<{ items: Article[]; continuation?: string }> {
     const params = new URLSearchParams({
       output: 'json',
       n: String(options.count || 20),
@@ -127,7 +126,7 @@ export class FreshRSSClient {
       throw new Error(`Failed to fetch articles: ${response.status}`)
     }
 
-    const data = await response.json() as { items?: Article[]; continuation?: string }
+    const data = (await response.json()) as { items?: Article[]; continuation?: string }
     return {
       items: data.items || [],
       continuation: data.continuation,
@@ -136,23 +135,20 @@ export class FreshRSSClient {
 
   async markAsRead(articleIds: string[]): Promise<void> {
     await this.ensureWriteToken()
-    
+
     const body = new URLSearchParams()
     body.set('T', this.writeToken!)
     body.set('a', 'user/-/state/com.google/read')
-    
+
     for (const id of articleIds) {
       body.append('i', id)
     }
 
-    const response = await fetch(
-      `${this.baseUrl}/reader/api/0/edit-tag`,
-      {
-        method: 'POST',
-        headers: this.authHeaders(),
-        body,
-      }
-    )
+    const response = await fetch(`${this.baseUrl}/reader/api/0/edit-tag`, {
+      method: 'POST',
+      headers: this.authHeaders(),
+      body,
+    })
 
     if (!response.ok) {
       throw new Error(`Failed to mark as read: ${response.status}`)
@@ -161,23 +157,20 @@ export class FreshRSSClient {
 
   async markAsUnread(articleIds: string[]): Promise<void> {
     await this.ensureWriteToken()
-    
+
     const body = new URLSearchParams()
     body.set('T', this.writeToken!)
     body.set('r', 'user/-/state/com.google/read')
-    
+
     for (const id of articleIds) {
       body.append('i', id)
     }
 
-    const response = await fetch(
-      `${this.baseUrl}/reader/api/0/edit-tag`,
-      {
-        method: 'POST',
-        headers: this.authHeaders(),
-        body,
-      }
-    )
+    const response = await fetch(`${this.baseUrl}/reader/api/0/edit-tag`, {
+      method: 'POST',
+      headers: this.authHeaders(),
+      body,
+    })
 
     if (!response.ok) {
       throw new Error(`Failed to mark as unread: ${response.status}`)
@@ -186,23 +179,20 @@ export class FreshRSSClient {
 
   async starArticle(articleIds: string[]): Promise<void> {
     await this.ensureWriteToken()
-    
+
     const body = new URLSearchParams()
     body.set('T', this.writeToken!)
     body.set('a', 'user/-/state/com.google/starred')
-    
+
     for (const id of articleIds) {
       body.append('i', id)
     }
 
-    const response = await fetch(
-      `${this.baseUrl}/reader/api/0/edit-tag`,
-      {
-        method: 'POST',
-        headers: this.authHeaders(),
-        body,
-      }
-    )
+    const response = await fetch(`${this.baseUrl}/reader/api/0/edit-tag`, {
+      method: 'POST',
+      headers: this.authHeaders(),
+      body,
+    })
 
     if (!response.ok) {
       throw new Error(`Failed to star article: ${response.status}`)
@@ -211,23 +201,20 @@ export class FreshRSSClient {
 
   async unstarArticle(articleIds: string[]): Promise<void> {
     await this.ensureWriteToken()
-    
+
     const body = new URLSearchParams()
     body.set('T', this.writeToken!)
     body.set('r', 'user/-/state/com.google/starred')
-    
+
     for (const id of articleIds) {
       body.append('i', id)
     }
 
-    const response = await fetch(
-      `${this.baseUrl}/reader/api/0/edit-tag`,
-      {
-        method: 'POST',
-        headers: this.authHeaders(),
-        body,
-      }
-    )
+    const response = await fetch(`${this.baseUrl}/reader/api/0/edit-tag`, {
+      method: 'POST',
+      headers: this.authHeaders(),
+      body,
+    })
 
     if (!response.ok) {
       throw new Error(`Failed to unstar article: ${response.status}`)

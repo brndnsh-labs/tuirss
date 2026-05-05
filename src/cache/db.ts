@@ -81,7 +81,9 @@ export class Cache {
       title: row.title as string,
       url: row.url as string,
       htmlUrl: row.html_url as string,
-      categories: row.category_id ? [{ id: row.category_id as string, label: row.category_name as string }] : [],
+      categories: row.category_id
+        ? [{ id: row.category_id as string, label: row.category_name as string }]
+        : [],
       unreadCount: row.unread_count as number,
     }))
   }
@@ -108,7 +110,7 @@ export class Cache {
         article.published ?? null,
         isRead ? 1 : 0,
         isStarred ? 1 : 0,
-        Date.now()
+        Date.now(),
       ]
 
       // Debug: check for undefined values
@@ -137,14 +139,18 @@ export class Cache {
     sql += ' ORDER BY published_at DESC'
 
     const query = this.db.query(sql)
-    const rows = params.length > 0 
-      ? query.all(...params) as Array<Record<string, unknown>>
-      : query.all() as Array<Record<string, unknown>>
+    const rows =
+      params.length > 0
+        ? (query.all(...params) as Array<Record<string, unknown>>)
+        : (query.all() as Array<Record<string, unknown>>)
     return rows.map((row) => this.rowToArticle(row))
   }
 
   getArticle(id: string): Article | null {
-    const row = this.db.query('SELECT * FROM articles WHERE id = ?').get(id) as Record<string, unknown> | null
+    const row = this.db.query('SELECT * FROM articles WHERE id = ?').get(id) as Record<
+      string,
+      unknown
+    > | null
     if (!row) return null
     return this.rowToArticle(row)
   }

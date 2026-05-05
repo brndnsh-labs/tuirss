@@ -31,8 +31,14 @@ export const configSchema = z.object({
   sync: syncSchema.default({ interval: 300, retention_days: 30 }),
   ui: uiSchema.default({ list_width: 40, show_unread_counts: true, date_format: '%Y-%m-%d %H:%M' }),
   keybindings: keybindingsSchema.default({
-    nav_down: 'j', nav_up: 'k', nav_left: 'h', nav_right: 'l',
-    mark_read: 'm', star: 's', refresh: 'r', quit: 'q'
+    nav_down: 'j',
+    nav_up: 'k',
+    nav_left: 'h',
+    nav_right: 'l',
+    mark_read: 'm',
+    star: 's',
+    refresh: 'r',
+    quit: 'q',
   }),
 })
 

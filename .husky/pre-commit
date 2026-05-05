@@ -1,10 +1,19 @@
 #!/bin/sh
-# Pre-commit hook to run TypeScript type checking
+# Pre-commit hook to run type checking and linting
 
+echo "Running type check..."
 bun run typecheck
 if [ $? -ne 0 ]; then
   echo "❌ Type check failed. Commit aborted."
   exit 1
 fi
 
+echo "Running linter..."
+bun run lint
+if [ $? -ne 0 ]; then
+  echo "❌ Lint check failed. Commit aborted."
+  exit 1
+fi
+
+echo "✅ All checks passed!"
 exit 0
