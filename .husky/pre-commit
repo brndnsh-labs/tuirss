@@ -1,0 +1,10 @@
+#!/bin/sh
+# Pre-commit hook to run TypeScript type checking
+
+bun run typecheck
+if [ $? -ne 0 ]; then
+  echo "❌ Type check failed. Commit aborted."
+  exit 1
+fi
+
+exit 0

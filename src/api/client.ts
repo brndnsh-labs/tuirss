@@ -30,9 +30,8 @@ export class FreshRSSClient {
     }
 
     const text = await response.text()
-    const authMatch = text.match(/Auth=([^
-]+)/)
-    
+    const authMatch = text.match(/Auth=([^\n]+)/)
+
     if (!authMatch) {
       throw new Error('Login failed: No Auth token in response')
     }
