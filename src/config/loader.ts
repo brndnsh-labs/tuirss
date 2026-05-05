@@ -30,13 +30,15 @@ const DEFAULT_CONFIG_TEMPLATE = `# TUIRSS Configuration
 # Please fill in your FreshRSS details below
 
 [server]
-# Your FreshRSS instance URL (should end with /api/)
+# Your FreshRSS instance URL
+# Example: http://docker01:8080/api/ or https://rss.example.com/api/
+# The /greader.php path will be added automatically if missing
 url = ""
 
 # Your FreshRSS username
 username = ""
 
-# Your FreshRSS API password (set in Profile settings)
+# Your FreshRSS API password (set in FreshRSS Profile settings)
 password = ""
 
 [sync]

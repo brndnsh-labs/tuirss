@@ -12,7 +12,11 @@ export class FreshRSSClient {
   private writeToken: string | null = null
 
   constructor(baseUrl: string, username: string, password: string) {
-    this.baseUrl = baseUrl.replace(/\/$/, '')
+    let url = baseUrl.replace(/\/$/, '')
+    if (!url.endsWith('greader.php')) {
+      url = url.replace(/\/$/, '') + '/greader.php'
+    }
+    this.baseUrl = url
     this.username = username
     this.password = password
   }
