@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
-import { join } from 'path'
+import { join, dirname } from 'path'
+import { mkdirSync, existsSync } from 'fs'
 import { getDataDir } from '../config/index.ts'
 import type { Feed, Article } from '../api/types.ts'
 
@@ -8,6 +9,10 @@ export class Cache {
 
   constructor(dbPath?: string) {
     const path = dbPath || join(getDataDir(), 'cache.db')
+    const dir = dirname(path)
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true })
+    }
     this.db = new Database(path)
     this.init()
   }
