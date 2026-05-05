@@ -26,6 +26,7 @@ export class App {
   private rootContainer!: BoxRenderable
 
   private syncInterval: ReturnType<typeof setInterval> | null = null
+  private destroyed = false
 
   constructor(config: Config) {
     this.config = config
@@ -46,6 +47,9 @@ export class App {
     })
 
     this.renderer.setBackgroundColor('#1a1a2e')
+
+    process.on('SIGINT', () => this.shutdown())
+    process.on('SIGTERM', () => this.shutdown())
 
     this.buildLayout()
     this.setupKeyboard()
@@ -194,6 +198,7 @@ export class App {
   }
 
   private render(state: AppState): void {
+    if (this.destroyed || this.renderer.isDestroyed) return
     this.feedList.update(state)
     this.articleView.update(state)
     this.statusBar.update(state)
@@ -335,8 +340,11 @@ export class App {
     this.state.update({ articles: updatedArticles })
     this.render(this.state.get())
 
-    this.client.markAsRead(newReadState ? [article.id] : []).catch(() => {})
-    this.client.markAsUnread(newReadState ? [] : [article.id]).catch(() => {})
+    if (newReadState) {
+      this.client.markAsRead([article.id]).catch(() => {})
+    } else {
+      this.client.markAsUnread([article.id]).catch(() => {})
+    }
   }
 
   private toggleStar(): void {
@@ -381,6 +389,7 @@ export class App {
   }
 
   private shutdown(): void {
+    this.destroyed = true
     if (this.syncInterval) {
       clearInterval(this.syncInterval)
     }
