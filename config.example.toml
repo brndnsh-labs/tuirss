@@ -1,0 +1,15 @@
+[server]
+# FreshRSS API URL. Both forms are accepted:
+#   http://docker01:8080/api/
+#   http://docker01:8080/api/greader.php
+api_url = "http://docker01:8080/api/"
+username = "your-freshrss-username"
+password = "your-freshrss-api-password"
+
+[cache]
+path = "./tuirss.db"
+
+[sync]
+page_size = 50
+max_pages = 6
+sync_on_start = true
