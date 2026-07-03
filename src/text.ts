@@ -12,6 +12,87 @@ export function htmlToText(input: string): string {
   );
 }
 
+/**
+ * Convert feed-article HTML into markdown for the reader. This is deliberately
+ * regex-based rather than a full parser: RSS/Atom bodies are block-structured
+ * but messy, and the markdown renderable is forgiving. Anything we don't
+ * recognize collapses to its text content.
+ */
+export function htmlToMarkdown(input: string): string {
+  let html = input
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "");
+
+  // Fenced code blocks first, so inner markup is preserved verbatim.
+  html = html.replace(/<pre[^>]*>([\s\S]*?)<\/pre>/gi, (_match, inner: string) => {
+    const code = decodeHtmlEntities(inner.replace(/<[^>]+>/g, "")).replace(/\n+$/, "");
+    return `\n\n\`\`\`\n${code}\n\`\`\`\n\n`;
+  });
+
+  html = html.replace(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi, (_match, level: string, inner: string) => {
+    return `\n\n${"#".repeat(Number(level))} ${inlineToMarkdown(inner).trim()}\n\n`;
+  });
+
+  html = html.replace(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/gi, (_match, inner: string) => {
+    const text = inlineToMarkdown(inner).trim();
+    const quoted = text
+      .split("\n")
+      .map((line) => `> ${line}`.trimEnd())
+      .join("\n");
+    return `\n\n${quoted}\n\n`;
+  });
+
+  html = html.replace(/<ol[^>]*>([\s\S]*?)<\/ol>/gi, (_match, inner: string) => {
+    let index = 0;
+    const items = inner.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_liMatch, li: string) => {
+      index += 1;
+      return `\n${index}. ${inlineToMarkdown(li).trim()}`;
+    });
+    return `\n\n${items.trim()}\n\n`;
+  });
+
+  html = html.replace(/<ul[^>]*>([\s\S]*?)<\/ul>/gi, (_match, inner: string) => {
+    const items = inner.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_liMatch, li: string) => `\n- ${inlineToMarkdown(li).trim()}`);
+    return `\n\n${items.trim()}\n\n`;
+  });
+
+  // Any list items left outside a <ul>/<ol>.
+  html = html.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_match, li: string) => `\n- ${inlineToMarkdown(li).trim()}`);
+
+  html = html
+    .replace(/<\/(p|div|section|article|figure|figcaption)\s*>/gi, "\n\n")
+    .replace(/<(p|div|section|article|figure|figcaption)[^>]*>/gi, "");
+
+  html = inlineToMarkdown(html);
+
+  return decodeHtmlEntities(html)
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function inlineToMarkdown(input: string): string {
+  return input
+    .replace(/<\s*br\s*\/?\s*>/gi, "\n")
+    .replace(/<a[^>]*\bhref=["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi, (_match, href: string, text: string) => {
+      const label = stripTags(text).trim();
+      if (!href || href.startsWith("javascript:")) return label;
+      return label && label !== href ? `[${label}](${href})` : href;
+    })
+    .replace(/<img[^>]*\balt=["']([^"']+)["'][^>]*>/gi, (_match, alt: string) => `(image: ${alt.trim()})`)
+    .replace(/<img[^>]*>/gi, "")
+    .replace(/<\s*(strong|b)\s*>([\s\S]*?)<\/\s*(?:strong|b)\s*>/gi, (_match, _tag: string, inner: string) => `**${stripTags(inner).trim()}**`)
+    .replace(/<\s*(em|i)\s*>([\s\S]*?)<\/\s*(?:em|i)\s*>/gi, (_match, _tag: string, inner: string) => `*${stripTags(inner).trim()}*`)
+    .replace(/<\s*code\s*>([\s\S]*?)<\/\s*code\s*>/gi, (_match, inner: string) => `\`${stripTags(inner).trim()}\``)
+    .replace(/<\s*hr\s*\/?\s*>/gi, "\n\n---\n\n")
+    .replace(/<[^>]+>/g, "");
+}
+
+function stripTags(input: string): string {
+  return input.replace(/<[^>]+>/g, "");
+}
+
 export function decodeHtmlEntities(input: string): string {
   const named: Record<string, string> = {
     amp: "&",
