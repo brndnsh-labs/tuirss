@@ -20,6 +20,21 @@ describe("SyncManager", () => {
 
     cache.close();
   });
+
+  test("reports progress messages during sync", async () => {
+    const cache = new CacheStore(":memory:");
+    cache.init();
+    const sync = new SyncManager(new FakeClient() as never, cache, testConfig);
+
+    const messages: string[] = [];
+    await sync.sync({}, (snapshot) => messages.push(snapshot.message));
+
+    expect(messages).toContain("Signing in");
+    expect(messages).toContain("Syncing subscriptions");
+    expect(messages).toContain("Syncing articles");
+
+    cache.close();
+  });
 });
 
 class FakeClient {

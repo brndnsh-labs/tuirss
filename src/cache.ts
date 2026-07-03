@@ -202,7 +202,9 @@ export class CacheStore {
       .map(feedFromRow);
   }
 
-  listArticles(options: { feedId?: string | null; query?: string; unreadOnly?: boolean; starredOnly?: boolean } = {}): Article[] {
+  listArticles(
+    options: { feedId?: string | null; query?: string; unreadOnly?: boolean; starredOnly?: boolean; keepIds?: string[] } = {},
+  ): Article[] {
     const clauses: string[] = [];
     const params: Record<string, string | number> = {};
 
@@ -211,8 +213,24 @@ export class CacheStore {
       params.$feedId = options.feedId;
     }
 
-    if (options.unreadOnly) clauses.push("is_read = 0");
-    if (options.starredOnly) clauses.push("is_starred = 1");
+    // keepIds relaxes the unread filter so an article read during this viewing
+    // stays in place (dimmed) until the feed/view changes, instead of vanishing
+    // under the cursor.
+    const keepIds = options.keepIds?.filter((id) => id.length > 0) ?? [];
+    const keepClause = keepIds
+      .map((id, index) => {
+        const key = `$keep${index}`;
+        params[key] = id;
+        return key;
+      })
+      .join(", ");
+
+    if (options.unreadOnly) {
+      clauses.push(keepClause ? `(is_read = 0 OR id IN (${keepClause}))` : "is_read = 0");
+    }
+    if (options.starredOnly) {
+      clauses.push(keepClause ? `(is_starred = 1 OR id IN (${keepClause}))` : "is_starred = 1");
+    }
 
     if (options.query?.trim()) {
       clauses.push("(title LIKE $query OR summary LIKE $query OR content LIKE $query OR origin_title LIKE $query)");

@@ -35,22 +35,30 @@ export class SyncManager {
     };
   }
 
-  async sync(articleOptions: Parameters<CacheStore["listArticles"]>[0] = {}): Promise<SyncSnapshot> {
+  async sync(
+    articleOptions: Parameters<CacheStore["listArticles"]>[0] = {},
+    onProgress?: (snapshot: SyncSnapshot) => void,
+  ): Promise<SyncSnapshot> {
+    const emit = () => onProgress?.(this.snapshot(articleOptions));
     try {
       this.status = "authenticating";
       this.message = "Signing in";
+      emit();
       await this.ensureLogin();
 
       this.status = "syncing";
       this.message = "Replaying queued changes";
+      emit();
       await this.replayPendingMutations();
 
       this.message = "Syncing subscriptions";
+      emit();
       const [subscriptions, unreadCounts] = await Promise.all([this.api.getSubscriptions(), this.api.getUnreadCounts()]);
       this.cache.upsertSubscriptions(subscriptions.subscriptions ?? []);
       this.cache.upsertUnreadCounts(unreadCounts);
 
       this.message = "Syncing articles";
+      emit();
       this.syncedArticles = await this.syncReadingList();
       this.cache.setState("last_sync_at", String(Date.now()));
 
