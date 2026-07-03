@@ -1,14 +1,40 @@
 /** @jsxImportSource @opentui/react */
 
 import { useBindings } from "@opentui/keymap/react";
-import { useKeyboard, useTerminalDimensions, useTimeline } from "@opentui/react";
-import type { CliRenderer } from "@opentui/core";
+import { useKeyboard, useTerminalDimensions } from "@opentui/react";
+import type { CliRenderer, ScrollBoxRenderable } from "@opentui/core";
+import { RGBA, SyntaxStyle, TextAttributes } from "@opentui/core";
+import type { RefObject } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SyncManager, SyncSnapshot } from "../sync";
 import type { Article, Feed, LayoutMode, Pane } from "../types";
-import { clampIndex, formatDate, htmlToText, layoutMode, truncate, windowAround } from "../text";
+import { clampIndex, formatDate, htmlToMarkdown, layoutMode, truncate, windowAround } from "../text";
+
+const READER_SYNTAX = SyntaxStyle.fromStyles({
+  "markup.heading": { fg: RGBA.fromHex("#d7ba7d"), bold: true },
+  "markup.heading.1": { fg: RGBA.fromHex("#d7ba7d"), bold: true },
+  "markup.heading.2": { fg: RGBA.fromHex("#d7ba7d"), bold: true },
+  "markup.heading.3": { fg: RGBA.fromHex("#d7ba7d"), bold: true },
+  "markup.list": { fg: RGBA.fromHex("#8b949e") },
+  "markup.quote": { fg: RGBA.fromHex("#8b949e"), italic: true },
+  "markup.raw": { fg: RGBA.fromHex("#a5d6ff") },
+  "markup.raw.block": { fg: RGBA.fromHex("#a5d6ff") },
+  "markup.link": { fg: RGBA.fromHex("#58a6ff"), underline: true },
+  "markup.link.label": { fg: RGBA.fromHex("#58a6ff"), underline: true },
+  "markup.link.url": { fg: RGBA.fromHex("#58a6ff"), underline: true },
+  "markup.strong": { fg: RGBA.fromHex("#f0f6fc"), bold: true },
+  "markup.italic": { fg: RGBA.fromHex("#d0d7de"), italic: true },
+  default: { fg: RGBA.fromHex("#d0d7de") },
+});
+
+const READER_SCROLL_STEP = 3;
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 type NavLevel = "sources" | "reading";
+type ArticleView = "unread" | "all" | "starred";
+
+const VIEW_ORDER: ArticleView[] = ["unread", "all", "starred"];
+const VIEW_LABEL: Record<ArticleView, string> = { unread: "Unread", all: "All", starred: "Starred" };
 
 interface AppProps {
   sync: SyncManager;
@@ -20,19 +46,22 @@ interface AppProps {
 export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
   const { width, height } = useTerminalDimensions();
   const mode = layoutMode(width);
-  const slideTimeline = useTimeline({ duration: 180, autoplay: false });
   const [snapshot, setSnapshot] = useState(initial);
   const [navLevel, setNavLevel] = useState<NavLevel>("reading");
   const [focusedPane, setFocusedPane] = useState<Pane>("articles");
   const [feedIndex, setFeedIndex] = useState(0);
   const [activeFeedId, setActiveFeedId] = useState<string | null>(null);
-  const [articleIndex, setArticleIndex] = useState(0);
+  const [selectedArticleId, setSelectedArticleId] = useState<string | null>(null);
+  const [view, setView] = useState<ArticleView>("unread");
+  // Articles read during this viewing that should stay visible (dimmed) until
+  // the feed or view changes, so the cursor doesn't jump when you read one.
+  const [stickyReadIds, setStickyReadIds] = useState<Set<string>>(() => new Set());
   const [filterMode, setFilterMode] = useState(false);
   const [filter, setFilter] = useState("");
   const [helpOpen, setHelpOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [contentOffset, setContentOffset] = useState(0);
-  const contentOffsetRef = useRef(0);
+  const [spinnerFrame, setSpinnerFrame] = useState(0);
+  const readerScrollRef = useRef<ScrollBoxRenderable | null>(null);
 
   const selectedSourceFeed = feedIndex === 0 ? null : (snapshot.feeds[clampIndex(feedIndex - 1, snapshot.feeds.length)] ?? null);
   const activeFeed = activeFeedId ? (snapshot.feeds.find((feed) => feed.id === activeFeedId) ?? null) : null;
@@ -40,9 +69,11 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
     () => ({
       feedId: activeFeedId,
       query: filter,
-      unreadOnly: true,
+      unreadOnly: view === "unread",
+      starredOnly: view === "starred",
+      keepIds: [...stickyReadIds],
     }),
-    [activeFeedId, filter],
+    [activeFeedId, filter, view, stickyReadIds],
   );
 
   const refreshFromCache = useCallback(() => {
@@ -52,7 +83,7 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
   const runSync = useCallback(async () => {
     setBusy(true);
     setSnapshot(sync.snapshot(articleOptions));
-    setSnapshot(await sync.sync(articleOptions));
+    setSnapshot(await sync.sync(articleOptions, setSnapshot));
     setBusy(false);
   }, [articleOptions, sync]);
 
@@ -64,42 +95,60 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
     if (syncOnStart) void runSync();
   }, []);
 
+  // Advance the status-bar spinner only while a sync is in flight.
+  useEffect(() => {
+    if (!busy) {
+      setSpinnerFrame(0);
+      return;
+    }
+    const interval = setInterval(() => setSpinnerFrame((frame) => (frame + 1) % SPINNER_FRAMES.length), 90);
+    return () => clearInterval(interval);
+  }, [busy]);
+
   useEffect(() => {
     setFeedIndex((current) => clampIndex(current, snapshot.feeds.length + 1));
-    setArticleIndex((current) => clampIndex(current, snapshot.articles.length));
-  }, [snapshot.feeds.length, snapshot.articles.length]);
+  }, [snapshot.feeds.length]);
 
+  // Keep the selection pinned to an article by id. When the list changes and the
+  // selected article is gone (e.g. it dropped out of the feed on sync), fall back
+  // to the first article rather than letting the cursor drift to a stale index.
   useEffect(() => {
-    const target = navLevel === "sources" && mode !== "one" ? width : 0;
-    slideTimeline.resetItems();
-    slideTimeline.add(
-      { x: contentOffsetRef.current },
-      {
-        x: target,
-        duration: 180,
-        ease: "outCirc",
-        onUpdate: (animation) => {
-          const next = Math.round(animation.targets[0].x);
-          contentOffsetRef.current = next;
-          setContentOffset(next);
-        },
-        onComplete: () => {
-          contentOffsetRef.current = target;
-          setContentOffset(target);
-        },
-      },
-    );
-    slideTimeline.restart();
-  }, [mode, navLevel, slideTimeline, width]);
+    if (snapshot.articles.length === 0) {
+      if (selectedArticleId !== null) setSelectedArticleId(null);
+      return;
+    }
+    if (!snapshot.articles.some((article) => article.id === selectedArticleId)) {
+      setSelectedArticleId(snapshot.articles[0].id);
+    }
+  }, [snapshot.articles, selectedArticleId]);
 
-  const selectedArticle = snapshot.articles[clampIndex(articleIndex, snapshot.articles.length)] ?? null;
+  const articleIndex = useMemo(() => {
+    const found = snapshot.articles.findIndex((article) => article.id === selectedArticleId);
+    return found >= 0 ? found : 0;
+  }, [snapshot.articles, selectedArticleId]);
+  const selectedArticle = snapshot.articles[articleIndex] ?? null;
 
   const enterReadingLevel = useCallback(() => {
     setActiveFeedId(selectedSourceFeed?.id ?? null);
     setNavLevel("reading");
     setFocusedPane("articles");
-    setArticleIndex(0);
+    setSelectedArticleId(null); // reconcile effect selects the first article of the new feed
+    setStickyReadIds(new Set()); // fresh sticky-read set per feed
   }, [selectedSourceFeed?.id]);
+
+  const openArticle = useCallback(() => {
+    setFocusedPane("reader");
+    if (selectedArticle && !selectedArticle.isRead) {
+      const article = selectedArticle;
+      // Adding to the sticky set changes articleOptions, which re-runs the
+      // cache refresh effect. setRead writes to SQLite synchronously before its
+      // first await, so that refresh already sees the new read state — no manual
+      // refresh here, which would query with the pre-sticky options and briefly
+      // drop the article, jumping the cursor.
+      setStickyReadIds((prev) => new Set(prev).add(article.id));
+      void sync.setRead(article, true);
+    }
+  }, [selectedArticle, sync]);
 
   const moveFocus = useCallback(
     (direction: -1 | 1) => {
@@ -117,47 +166,73 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
         return;
       }
 
-      setFocusedPane("reader");
+      if (focusedPane === "articles") openArticle();
     },
-    [enterReadingLevel, focusedPane, navLevel],
+    [enterReadingLevel, focusedPane, navLevel, openArticle],
+  );
+
+  const selectArticleAt = useCallback(
+    (index: number) => {
+      const target = snapshot.articles[clampIndex(index, snapshot.articles.length)];
+      if (target) setSelectedArticleId(target.id);
+    },
+    [snapshot.articles],
   );
 
   const moveSelection = useCallback(
     (direction: -1 | 1) => {
       if (navLevel === "sources" || focusedPane === "feeds") {
         setFeedIndex((current) => clampIndex(current + direction, snapshot.feeds.length + 1));
-        setArticleIndex(0);
       } else if (focusedPane === "articles") {
-        setArticleIndex((current) => clampIndex(current + direction, snapshot.articles.length));
+        selectArticleAt(articleIndex + direction);
+      } else if (focusedPane === "reader") {
+        readerScrollRef.current?.scrollBy(direction * READER_SCROLL_STEP);
       }
     },
-    [focusedPane, navLevel, snapshot.articles.length, snapshot.feeds.length],
+    [articleIndex, focusedPane, navLevel, selectArticleAt, snapshot.feeds.length],
   );
 
   const jumpSelection = useCallback(
     (target: "top" | "bottom") => {
       if (navLevel === "sources" || focusedPane === "feeds") {
         setFeedIndex(target === "top" ? 0 : Math.max(0, snapshot.feeds.length));
-        setArticleIndex(0);
       } else if (focusedPane === "articles") {
-        setArticleIndex(target === "top" ? 0 : Math.max(0, snapshot.articles.length - 1));
+        selectArticleAt(target === "top" ? 0 : snapshot.articles.length - 1);
+      } else if (focusedPane === "reader") {
+        const scroll = readerScrollRef.current;
+        if (scroll) scroll.scrollTo(target === "top" ? 0 : scroll.scrollHeight);
       }
     },
-    [focusedPane, navLevel, snapshot.articles.length, snapshot.feeds.length],
+    [focusedPane, navLevel, selectArticleAt, snapshot.articles.length, snapshot.feeds.length],
   );
 
   const activate = useCallback(() => {
     if (navLevel === "sources" || focusedPane === "feeds") {
       enterReadingLevel();
     } else if (focusedPane === "articles") {
-      setFocusedPane("reader");
+      openArticle();
     }
-  }, [enterReadingLevel, focusedPane, navLevel]);
+  }, [enterReadingLevel, focusedPane, navLevel, openArticle]);
+
+  const cycleView = useCallback(() => {
+    setView((current) => VIEW_ORDER[(VIEW_ORDER.indexOf(current) + 1) % VIEW_ORDER.length]);
+    setStickyReadIds(new Set());
+    setSelectedArticleId(null);
+  }, []);
 
   const toggleRead = useCallback(async () => {
     if (!selectedArticle) return;
-    await sync.setRead(selectedArticle, !selectedArticle.isRead);
-    refreshFromCache();
+    const article = selectedArticle;
+    const nextRead = !article.isRead;
+    if (nextRead) {
+      // Sticky-set change drives the refresh (see openArticle) and keeps the
+      // just-read article in place instead of dropping it under the cursor.
+      setStickyReadIds((prev) => new Set(prev).add(article.id));
+      await sync.setRead(article, true);
+    } else {
+      await sync.setRead(article, false);
+      refreshFromCache();
+    }
   }, [refreshFromCache, selectedArticle, sync]);
 
   const toggleStarred = useCallback(async () => {
@@ -165,6 +240,11 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
     await sync.setStarred(selectedArticle, !selectedArticle.isStarred);
     refreshFromCache();
   }, [refreshFromCache, selectedArticle, sync]);
+
+  const openInBrowser = useCallback(() => {
+    const url = selectedArticle?.url;
+    if (url) openUrl(url);
+  }, [selectedArticle?.url]);
 
   useBindings(
     () => ({
@@ -181,6 +261,8 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
         { name: "sync", run: () => void runSync() },
         { name: "toggle-read", run: () => void toggleRead() },
         { name: "toggle-starred", run: () => void toggleStarred() },
+        { name: "cycle-view", run: () => cycleView() },
+        { name: "open-browser", run: () => openInBrowser() },
         { name: "filter", run: () => setFilterMode(true) },
         { name: "help", run: () => setHelpOpen((open) => !open) },
         {
@@ -204,12 +286,14 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
         { key: "r", cmd: "sync" },
         { key: "m", cmd: "toggle-read" },
         { key: "s", cmd: "toggle-starred" },
+        { key: "v", cmd: "cycle-view" },
+        { key: "o", cmd: "open-browser" },
         { key: "/", cmd: "filter" },
         { key: "?", cmd: "help" },
         { key: "escape", cmd: "close-overlay" },
       ],
     }),
-    [activate, filterMode, jumpSelection, moveFocus, moveSelection, renderer, runSync, toggleRead, toggleStarred],
+    [activate, cycleView, filterMode, jumpSelection, moveFocus, moveSelection, openInBrowser, renderer, runSync, toggleRead, toggleStarred],
   );
 
   useKeyboard((key) => {
@@ -230,57 +314,62 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
     }
   });
 
-  const showSourcesLayer = navLevel === "sources" || contentOffset > 0;
   const statusSource = navLevel === "sources" ? selectedSourceFeed : activeFeed;
 
   return (
     <box width="100%" height="100%" flexDirection="column" backgroundColor="#101418">
-      <box flexGrow={1} width="100%" position="relative" backgroundColor="#101418">
-        {showSourcesLayer ? (
-          <FeedPane
-            mode={mode}
-            focused={navLevel === "sources" || focusedPane === "feeds"}
-            feeds={snapshot.feeds}
-            selectedIndex={feedIndex}
-            activeFeedId={activeFeedId}
-            height={height}
-          />
-        ) : null}
-        {mode !== "one" || navLevel === "reading" ? (
-          <box
-            position={mode === "one" ? "relative" : "absolute"}
-            left={mode === "one" ? 0 : contentOffset}
-            top={0}
-            width="100%"
-            height="100%"
-            flexDirection="row"
-          >
+      <box flexGrow={1} width="100%" flexDirection="row" backgroundColor="#101418">
+        {navLevel === "sources" ? (
+          // Sources level: feed list, with the reader kept alongside in wide modes.
+          <>
+            <FeedPane
+              mode={mode}
+              focused
+              feeds={snapshot.feeds}
+              selectedIndex={feedIndex}
+              activeFeedId={activeFeedId}
+              height={height}
+            />
+            {mode !== "one" ? (
+              <ReaderPane mode={mode} focused={false} article={selectedArticle} width={width} scrollRef={readerScrollRef} />
+            ) : null}
+          </>
+        ) : (
+          // Reading level: article list plus reader (one pane at a time when narrow).
+          <>
             {readingPanesForMode(mode, focusedPane).includes("articles") ? (
               <ArticlePane
                 mode={mode}
-                focused={navLevel === "reading" && focusedPane === "articles"}
+                focused={focusedPane === "articles"}
                 articles={snapshot.articles}
                 selectedIndex={articleIndex}
                 height={height}
-                sourceTitle={activeFeed?.title ?? "All Unread"}
+                sourceTitle={activeFeed?.title ?? `${VIEW_LABEL[view]}${view === "all" ? " Articles" : ""}`}
               />
             ) : null}
             {readingPanesForMode(mode, focusedPane).includes("reader") ? (
-              <ReaderPane mode={mode} focused={navLevel === "reading" && focusedPane === "reader"} article={selectedArticle} width={width} height={height} />
+              <ReaderPane
+                mode={mode}
+                focused={focusedPane === "reader"}
+                article={selectedArticle}
+                width={width}
+                scrollRef={readerScrollRef}
+              />
             ) : null}
-          </box>
-        ) : null}
+          </>
+        )}
       </box>
       {helpOpen ? <HelpOverlay /> : null}
       <StatusBar
         snapshot={snapshot}
-        focusedPane={focusedPane}
         filter={filter}
         filterMode={filterMode}
         busy={busy}
         selectedFeed={statusSource}
         activeFeed={activeFeed}
         navLevel={navLevel}
+        view={view}
+        spinner={busy ? SPINNER_FRAMES[spinnerFrame] : ""}
       />
     </box>
   );
@@ -289,6 +378,18 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
 function readingPanesForMode(mode: LayoutMode, focusedPane: Pane): Pane[] {
   if (mode === "one") return [focusedPane === "reader" ? "reader" : "articles"];
   return ["articles", "reader"];
+}
+
+// Open a URL in the user's default browser. Best-effort across platforms; a
+// missing opener just no-ops rather than crashing the TUI.
+function openUrl(url: string): void {
+  const opener = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
+  const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
+  try {
+    Bun.spawn([opener, ...args], { stdout: "ignore", stderr: "ignore" });
+  } catch {
+    // No browser opener available (headless/test); ignore.
+  }
 }
 
 function FeedPane({
@@ -307,7 +408,7 @@ function FeedPane({
   height: number;
 }) {
   const totalUnread = feeds.reduce((total, feed) => total + feed.unreadCount, 0);
-  const rows: SourceRow[] = [{ id: null, title: "All Unread", unreadCount: totalUnread }, ...feeds];
+  const rows: SourceRow[] = [{ id: null, title: "All Feeds", unreadCount: totalUnread }, ...feeds];
   const visible = windowAround(rows, selectedIndex, Math.max(3, height - 5));
   const width = mode === "one" ? "100%" : mode === "three" ? 38 : 34;
 
@@ -355,7 +456,7 @@ function ArticlePane({
 
   return (
     <box width={width} height="100%" border borderColor={focused ? "#d7ba7d" : "#3a4450"} title={sourceTitle} padding={1}>
-      {visible.items.length === 0 ? <text fg="#8b949e">No unread articles here.</text> : null}
+      {visible.items.length === 0 ? <text fg="#8b949e">No articles here.</text> : null}
       {visible.items.map((article, index) => {
         const absoluteIndex = visible.offset + index;
         const selected = absoluteIndex === selectedIndex;
@@ -376,34 +477,39 @@ function ReaderPane({
   focused,
   article,
   width,
-  height,
+  scrollRef,
 }: {
   mode: LayoutMode;
   focused: boolean;
   article: Article | null;
   width: number;
-  height: number;
+  scrollRef: RefObject<ScrollBoxRenderable | null>;
 }) {
-  const body = article ? htmlToText(article.content || article.summary) : "";
-  const lines = article ? body.split("\n").slice(0, Math.max(4, height - 8)) : [];
   const readerWidth = mode === "three" ? width - 42 : mode === "two" ? width - 34 : width;
-  const maxTitle = Math.max(20, Math.min(readerWidth - 8, mode === "three" ? 90 : readerWidth - 8));
+  const maxTitle = Math.max(20, readerWidth - 8);
+  const markdown = useMemo(() => (article ? htmlToMarkdown(article.content || article.summary) : ""), [article]);
 
   return (
-    <box flexGrow={1} width="100%" height="100%" border borderColor={focused ? "#d7ba7d" : "#3a4450"} title="Reader" padding={1}>
+    <box flexGrow={1} width="100%" height="100%" border borderColor={focused ? "#d7ba7d" : "#3a4450"} title="Reader" padding={1} flexDirection="column">
       {!article ? (
         <text fg="#8b949e">Select an article.</text>
       ) : (
         <>
-          <text fg="#f0f6fc">{truncate(article.title, maxTitle)}</text>
-          <text fg="#8b949e">{truncate(article.originTitle ?? article.url ?? "", maxTitle)}</text>
-          <text> </text>
-          {lines.length === 0 ? <text fg="#8b949e">(empty article body)</text> : null}
-          {lines.map((line, index) => (
-            <text key={`${article.id}-${index}`} fg="#d0d7de">
-              {truncate(line, Math.max(20, readerWidth - 8))}
+          <box flexShrink={0} flexDirection="column">
+            <text fg="#f0f6fc" attributes={TextAttributes.BOLD}>
+              {truncate(article.title, maxTitle)}
             </text>
-          ))}
+            <text fg="#8b949e">{truncate([article.originTitle, article.author, formatDate(article.published)].filter(Boolean).join("  ·  "), maxTitle)}</text>
+            <text> </text>
+          </box>
+          {/* key remounts the scrollbox per article, resetting scroll to top. */}
+          <scrollbox key={article.id} ref={scrollRef} flexGrow={1} style={{ rootOptions: { backgroundColor: "#101418" } }}>
+            {markdown.length === 0 ? (
+              <text fg="#8b949e">(empty article body)</text>
+            ) : (
+              <markdown content={markdown} syntaxStyle={READER_SYNTAX} style={{ width: "100%" }} />
+            )}
+          </scrollbox>
         </>
       )}
     </box>
@@ -412,28 +518,31 @@ function ReaderPane({
 
 function StatusBar({
   snapshot,
-  focusedPane,
   filter,
   filterMode,
   busy,
   selectedFeed,
   activeFeed,
   navLevel,
+  view,
+  spinner,
 }: {
   snapshot: SyncSnapshot;
-  focusedPane: Pane;
   filter: string;
   filterMode: boolean;
   busy: boolean;
   selectedFeed: Feed | null;
   activeFeed: Feed | null;
   navLevel: NavLevel;
+  view: ArticleView;
+  spinner: string;
 }) {
   const unread = snapshot.feeds.reduce((total, feed) => total + feed.unreadCount, 0);
-  const left = `${busy ? "syncing" : snapshot.status} | ${navLevel}/${focusedPane} | unread ${unread}`;
+  const status = busy ? `${spinner} syncing` : snapshot.status;
+  const left = `${status}  ·  ${VIEW_LABEL[view]}  ·  unread ${unread}`;
   const middle = selectedFeed
     ? `${navLevel === "sources" ? "selected" : "source"}: ${selectedFeed.title}`
-    : `source: ${activeFeed?.title ?? "All Unread"}`;
+    : `source: ${activeFeed?.title ?? VIEW_LABEL[view]}`;
   const queue = snapshot.pendingMutations > 0 ? `${snapshot.pendingMutations} queued | ` : "";
   const right = filterMode ? `/${filter}` : `${queue}${snapshot.message}`;
 
@@ -454,20 +563,22 @@ function HelpOverlay() {
       position="absolute"
       top={2}
       left={4}
-      width={64}
-      height={14}
+      width={66}
+      height={16}
       border
       borderColor="#d7ba7d"
       backgroundColor="#101418"
       title="Keys"
       padding={1}
     >
-      <text fg="#f0f6fc">h/l pane  j/k move  g/G top/bottom  enter open</text>
-      <text fg="#f0f6fc">r sync  m read/unread  s star/unstar  / filter</text>
-      <text fg="#f0f6fc">h from unread opens Sources  l or enter returns to reading</text>
-      <text fg="#f0f6fc">escape close  q quit</text>
+      <text fg="#f0f6fc">j/k move   g/G top/bottom   enter/l open   h back</text>
+      <text fg="#f0f6fc">in reader: j/k scroll   g/G jump to top/bottom</text>
       <text> </text>
-      <text fg="#8b949e">Wide terminals default to unread articles plus reader, with Sources one level up.</text>
+      <text fg="#f0f6fc">m read/unread   s star   v cycle view   o open in browser</text>
+      <text fg="#f0f6fc">r sync   / filter   ? help   escape close   q quit</text>
+      <text> </text>
+      <text fg="#8b949e">Opening an article marks it read; it stays listed (dimmed) until</text>
+      <text fg="#8b949e">you leave the feed. v cycles Unread / All / Starred.</text>
     </box>
   );
 }
