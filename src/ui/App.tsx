@@ -82,8 +82,7 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
   // header row).
   const sourceRows = useMemo(() => buildSourceRows(snapshot.feeds), [snapshot.feeds]);
   const sourceRowsLength = sourceRows.length;
-  // Header rows don't open a feed; only the "feed" variant does. Memoized so
-  // the reference is stable across renders for callers that depend on it.
+  // Header rows don't open a feed; only the "feed" variant does.
   const selectedSourceFeed = useMemo<Feed | null>(() => {
     const row = sourceRows[clampIndex(feedIndex, sourceRowsLength)];
     if (!row || row.kind !== "feed") return null;
@@ -430,25 +429,18 @@ function buildSourceRows(feeds: Feed[]): SourceRow[] {
   const rows: SourceRow[] = [{ kind: "all", unreadCount: totalUnread }];
 
   let currentGroup: string | null | undefined = undefined;
+  let currentHeader: SourceRow | null = null;
   for (const feed of feeds) {
     const label = feed.categoryLabel ?? null;
     if (label !== currentGroup) {
       // First uncategorized feed gets the "Feeds" header; subsequent
       // category transitions get a header with the category label.
       const headerLabel = label ?? "Feeds";
-      rows.push({ kind: "header", label: headerLabel, unreadCount: feed.unreadCount });
+      currentHeader = { kind: "header", label: headerLabel, unreadCount: feed.unreadCount };
+      rows.push(currentHeader);
       currentGroup = label;
-    } else {
-      // Add this feed's unread count to the running header total. The header
-      // is the most recent header row in the list (not necessarily the very
-      // last row, which is the previous feed row).
-      for (let i = rows.length - 1; i >= 0; i -= 1) {
-        const row = rows[i];
-        if (row && row.kind === "header") {
-          row.unreadCount += feed.unreadCount;
-          break;
-        }
-      }
+    } else if (currentHeader) {
+      currentHeader.unreadCount += feed.unreadCount;
     }
     rows.push({ kind: "feed", id: feed.id, title: feed.title, unreadCount: feed.unreadCount });
   }
@@ -571,10 +563,15 @@ function ArticlePane({
         const date = formatDate(article.published);
         const title = truncate(article.title, titleMax);
         const line1 = date ? `${marker} ${title} ${date}` : `${marker} ${title}`.trimEnd();
-        const attribution = article.author
-          ? `${article.originTitle ?? ""}  ·  ${article.author}`.replace(/^  ·  /, "")
-          : article.originTitle ?? "";
-        const line2 = truncate(attribution, metaMax);
+        // Line 2 is 2-space indented so the attribution sits under the title,
+        // not flush with the marker column. ` · ` (single-space) matches the
+        // reader attribution above.
+        const feedPart = article.originTitle ?? "";
+        const authorPart = article.author ?? "";
+        const body = feedPart && authorPart
+          ? `${feedPart} · ${authorPart}`
+          : feedPart || authorPart;
+        const line2 = body ? `  ${truncate(body, metaMax - 2)}` : "";
 
         // Cursor highlight overrides per-article dim/read color. Sticky-read
         // (read but in keepIds) still uses the dim color when not selected.

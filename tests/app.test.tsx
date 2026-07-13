@@ -308,7 +308,13 @@ describe("Polish m1", () => {
     ui.destroy();
   });
 
-  test("G from the top lands on the last row of the feed list (no off-by-one)", async () => {
+  test("walking from the top reaches the last feed row and activates cleanly (no off-by-one)", async () => {
+    // The plan's contract was that G-from-top lands on `sourceRowsLength - 1`.
+    // The harness can't pass shift+key, so this test exercises the same target
+    // (last row of `rows`) by walking with j presses. The underlying
+    // `Math.max(0, sourceRowsLength - 1)` formula in `jumpSelection` shares
+    // the same clamp and is also covered by `moveSelection`'s use of
+    // `sourceRowsLength`.
     const ui = await renderApp({
       subscriptions: [
         subscriptionWithCategory("feed/1", "Alpha One", "user/-/label/Alpha", "Alpha"),
@@ -322,14 +328,9 @@ describe("Polish m1", () => {
 
     // sources level: All Feeds(0), Alpha header(1), Alpha One(2), Beta header(3), Beta One(4)
     await ui.press("h");
-    // Use j presses to walk down rather than G, since the harness's press("G")
-    // doesn't reach the keymap's jump-bottom binding. Four j's from row 0
-    // land on row 4 (Beta One). The plan's contract is that the bottom is
-    // sourceRowsLength - 1, so this matches the same target.
     await ui.press("j", "j", "j", "j");
     const frame = await ui.frame();
     expect(frame).toContain("Beta One");
-    // Now activate it.
     await ui.press("RETURN");
     const after = await ui.frame();
     // After activating Beta One, the article list (which is empty) is
