@@ -29,12 +29,25 @@ const READER_SYNTAX = SyntaxStyle.fromStyles({
 
 const READER_SCROLL_STEP = 3;
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const UNREAD_GLYPH = "●";
 
 type NavLevel = "sources" | "reading";
 type ArticleView = "unread" | "all" | "starred";
 
 const VIEW_ORDER: ArticleView[] = ["unread", "all", "starred"];
 const VIEW_LABEL: Record<ArticleView, string> = { unread: "Unread", all: "All", starred: "Starred" };
+const EMPTY_BY_VIEW: Record<ArticleView, string> = {
+  unread: "No unread articles. Press v to switch views, r to sync.",
+  all: "No articles in this feed. Press r to sync.",
+  starred: "No starred articles yet. Press s on an article to star it.",
+};
+
+// Display row in the FeedPane. All three variants travel through the same
+// windowing/clamp/index math in App; FeedPane renders each according to kind.
+type SourceRow =
+  | { kind: "all"; unreadCount: number }
+  | { kind: "header"; label: string; unreadCount: number }
+  | { kind: "feed"; id: string; title: string; unreadCount: number };
 
 interface AppProps {
   sync: SyncManager;
@@ -63,7 +76,20 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
   const [spinnerFrame, setSpinnerFrame] = useState(0);
   const readerScrollRef = useRef<ScrollBoxRenderable | null>(null);
 
-  const selectedSourceFeed = feedIndex === 0 ? null : (snapshot.feeds[clampIndex(feedIndex - 1, snapshot.feeds.length)] ?? null);
+  // Build the display rows once per snapshot, with category groups. Lifted out
+  // of FeedPane so App can answer "what feed is at index N?" without re-walking
+  // the feed list (and getting the wrong answer for indices that land on a
+  // header row).
+  const sourceRows = useMemo(() => buildSourceRows(snapshot.feeds), [snapshot.feeds]);
+  const sourceRowsLength = sourceRows.length;
+  // Header rows don't open a feed; only the "feed" variant does. Memoized so
+  // the reference is stable across renders for callers that depend on it.
+  const selectedSourceFeed = useMemo<Feed | null>(() => {
+    const row = sourceRows[clampIndex(feedIndex, sourceRowsLength)];
+    if (!row || row.kind !== "feed") return null;
+    return snapshot.feeds.find((feed) => feed.id === row.id) ?? null;
+  }, [sourceRows, snapshot.feeds, feedIndex, sourceRowsLength]);
+
   const activeFeed = activeFeedId ? (snapshot.feeds.find((feed) => feed.id === activeFeedId) ?? null) : null;
   const articleOptions = useMemo(
     () => ({
@@ -106,8 +132,8 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
   }, [busy]);
 
   useEffect(() => {
-    setFeedIndex((current) => clampIndex(current, snapshot.feeds.length + 1));
-  }, [snapshot.feeds.length]);
+    setFeedIndex((current) => clampIndex(current, sourceRowsLength));
+  }, [sourceRowsLength]);
 
   // Keep the selection pinned to an article by id. When the list changes and the
   // selected article is gone (e.g. it dropped out of the feed on sync), fall back
@@ -182,20 +208,20 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
   const moveSelection = useCallback(
     (direction: -1 | 1) => {
       if (navLevel === "sources" || focusedPane === "feeds") {
-        setFeedIndex((current) => clampIndex(current + direction, snapshot.feeds.length + 1));
+        setFeedIndex((current) => clampIndex(current + direction, sourceRowsLength));
       } else if (focusedPane === "articles") {
         selectArticleAt(articleIndex + direction);
       } else if (focusedPane === "reader") {
         readerScrollRef.current?.scrollBy(direction * READER_SCROLL_STEP);
       }
     },
-    [articleIndex, focusedPane, navLevel, selectArticleAt, snapshot.feeds.length],
+    [articleIndex, focusedPane, navLevel, selectArticleAt, sourceRowsLength],
   );
 
   const jumpSelection = useCallback(
     (target: "top" | "bottom") => {
       if (navLevel === "sources" || focusedPane === "feeds") {
-        setFeedIndex(target === "top" ? 0 : Math.max(0, snapshot.feeds.length));
+        setFeedIndex(target === "top" ? 0 : Math.max(0, sourceRowsLength - 1));
       } else if (focusedPane === "articles") {
         selectArticleAt(target === "top" ? 0 : snapshot.articles.length - 1);
       } else if (focusedPane === "reader") {
@@ -203,7 +229,7 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
         if (scroll) scroll.scrollTo(target === "top" ? 0 : scroll.scrollHeight);
       }
     },
-    [focusedPane, navLevel, selectArticleAt, snapshot.articles.length, snapshot.feeds.length],
+    [focusedPane, navLevel, selectArticleAt, snapshot.articles.length, sourceRowsLength],
   );
 
   const activate = useCallback(() => {
@@ -325,7 +351,7 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
             <FeedPane
               mode={mode}
               focused
-              feeds={snapshot.feeds}
+              rows={sourceRows}
               selectedIndex={feedIndex}
               activeFeedId={activeFeedId}
               height={height}
@@ -345,6 +371,8 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
                 selectedIndex={articleIndex}
                 height={height}
                 sourceTitle={activeFeed?.title ?? `${VIEW_LABEL[view]}${view === "all" ? " Articles" : ""}`}
+                view={view}
+                terminalWidth={width}
               />
             ) : null}
             {readingPanesForMode(mode, focusedPane).includes("reader") ? (
@@ -392,48 +420,108 @@ function openUrl(url: string): void {
   }
 }
 
+// Walk the already-sorted feeds array, inserting a "header" row before each
+// new group boundary. The "All Feeds" row sits at index 0; category groups
+// follow in the same case-insensitive order listFeeds uses. Uncategorized
+// feeds ("Feeds" group) appear right after "All Feeds" if present, then
+// categorized groups. With zero feeds the result is just [All Feeds].
+function buildSourceRows(feeds: Feed[]): SourceRow[] {
+  const totalUnread = feeds.reduce((total, feed) => total + feed.unreadCount, 0);
+  const rows: SourceRow[] = [{ kind: "all", unreadCount: totalUnread }];
+
+  let currentGroup: string | null | undefined = undefined;
+  for (const feed of feeds) {
+    const label = feed.categoryLabel ?? null;
+    if (label !== currentGroup) {
+      // First uncategorized feed gets the "Feeds" header; subsequent
+      // category transitions get a header with the category label.
+      const headerLabel = label ?? "Feeds";
+      rows.push({ kind: "header", label: headerLabel, unreadCount: feed.unreadCount });
+      currentGroup = label;
+    } else {
+      // Add this feed's unread count to the running header total. The header
+      // is the most recent header row in the list (not necessarily the very
+      // last row, which is the previous feed row).
+      for (let i = rows.length - 1; i >= 0; i -= 1) {
+        const row = rows[i];
+        if (row && row.kind === "header") {
+          row.unreadCount += feed.unreadCount;
+          break;
+        }
+      }
+    }
+    rows.push({ kind: "feed", id: feed.id, title: feed.title, unreadCount: feed.unreadCount });
+  }
+
+  return rows;
+}
+
 function FeedPane({
   mode,
   focused,
-  feeds,
+  rows,
   selectedIndex,
   activeFeedId,
   height,
 }: {
   mode: LayoutMode;
   focused: boolean;
-  feeds: Feed[];
+  rows: SourceRow[];
   selectedIndex: number;
   activeFeedId: string | null;
   height: number;
 }) {
-  const totalUnread = feeds.reduce((total, feed) => total + feed.unreadCount, 0);
-  const rows: SourceRow[] = [{ id: null, title: "All Feeds", unreadCount: totalUnread }, ...feeds];
   const visible = windowAround(rows, selectedIndex, Math.max(3, height - 5));
   const width = mode === "one" ? "100%" : mode === "three" ? 38 : 34;
+  const labelWidth = mode === "one" ? 80 : 38;
+  // "No feeds" means no subscriptions at all (the synthetic "All Feeds" row
+  // sits alone before any categories are added).
+  const hasNoFeeds = rows.length <= 1;
 
   return (
     <box width={width} height="100%" border borderColor={focused ? "#d7ba7d" : "#3a4450"} title="Sources" padding={1}>
-      {visible.items.length === 0 ? <text fg="#8b949e">No feeds cached yet. Press r to sync.</text> : null}
-      {visible.items.map((row, index) => {
+      {hasNoFeeds ? <text fg="#8b949e">No feeds yet. Press r to sync.</text> : null}
+      {hasNoFeeds ? null : visible.items.map((row, index) => {
         const absoluteIndex = visible.offset + index;
         const selected = absoluteIndex === selectedIndex;
+
+        if (row.kind === "header") {
+          return (
+            <text key={`header-${row.label}`} fg="#8b949e" attributes={TextAttributes.BOLD}>
+              {`${row.label}  (${row.unreadCount} unread)`}
+            </text>
+          );
+        }
+
+        if (row.kind === "all") {
+          const countLabel = String(row.unreadCount).padStart(3, " ");
+          const label = `${countLabel}   All Feeds`;
+          return (
+            <text
+              key="all-unread"
+              fg={selected ? "#101418" : row.unreadCount > 0 ? "#f0f6fc" : "#8b949e"}
+              bg={selected ? "#d7ba7d" : undefined}
+            >
+              {truncate(label, labelWidth)}
+            </text>
+          );
+        }
+
         const active = row.id === activeFeedId;
-        const label = `${row.unreadCount > 0 ? String(row.unreadCount).padStart(3, " ") : "   "} ${active ? "> " : "  "}${row.title}`;
+        const countLabel = row.unreadCount > 0 ? String(row.unreadCount).padStart(3, " ") : "   ";
+        const label = `${countLabel} ${active ? "> " : "  "}${row.title}`;
         return (
-          <text key={row.id ?? "all-unread"} fg={selected ? "#101418" : row.unreadCount > 0 ? "#f0f6fc" : "#8b949e"} bg={selected ? "#d7ba7d" : undefined}>
-            {truncate(label, mode === "one" ? 80 : 38)}
+          <text
+            key={row.id}
+            fg={selected ? "#101418" : row.unreadCount > 0 ? "#f0f6fc" : "#8b949e"}
+            bg={selected ? "#d7ba7d" : undefined}
+          >
+            {truncate(label, labelWidth)}
           </text>
         );
       })}
     </box>
   );
-}
-
-interface SourceRow {
-  id: string | null;
-  title: string;
-  unreadCount: number;
 }
 
 function ArticlePane({
@@ -443,6 +531,8 @@ function ArticlePane({
   selectedIndex,
   height,
   sourceTitle,
+  view,
+  terminalWidth,
 }: {
   mode: LayoutMode;
   focused: boolean;
@@ -450,22 +540,56 @@ function ArticlePane({
   selectedIndex: number;
   height: number;
   sourceTitle: string;
+  view: ArticleView;
+  terminalWidth: number;
 }) {
-  const visible = windowAround(articles, selectedIndex, Math.max(3, height - 5));
+  // 2 lines per article: title on line 1, attribution on line 2. window size
+  // is in articles; rendered output is 2 * count.
+  const window = windowAround(articles, selectedIndex, Math.max(2, Math.floor((height - 5) / 2)));
   const width = mode === "one" ? "100%" : mode === "three" ? 42 : 34;
+  // Line budgets (after pane border + padding chrome). Marker (3) + space (1)
+  // + title + space (1) + date (5) = 10 chars of overhead on line 1; title
+  // truncate = lineBudget - 10. Line 2 = 2-char indent + feed + author, with
+  // ` · ` separator (3 chars) when author present.
+  const contentWidth = mode === "one" ? Math.max(40, terminalWidth - 4) : (width as number) - 4;
+  const lineBudget = contentWidth;
+  const titleMax = Math.max(8, lineBudget - 10);
+  const metaMax = Math.max(8, lineBudget - 5);
 
   return (
     <box width={width} height="100%" border borderColor={focused ? "#d7ba7d" : "#3a4450"} title={sourceTitle} padding={1}>
-      {visible.items.length === 0 ? <text fg="#8b949e">No articles here.</text> : null}
-      {visible.items.map((article, index) => {
-        const absoluteIndex = visible.offset + index;
+      {window.items.length === 0 ? <text fg="#8b949e">{EMPTY_BY_VIEW[view]}</text> : null}
+      {window.items.map((article, index) => {
+        const absoluteIndex = window.offset + index;
         const selected = absoluteIndex === selectedIndex;
-        const marker = `${article.isStarred ? "*" : " "} ${article.isRead ? " " : "u"}`;
-        const line = `${marker} ${truncate(article.title, mode === "one" ? 60 : mode === "three" ? 27 : 20)} ${formatDate(article.published)}`;
+        const dim = article.isRead;
+        const starMark = article.isStarred ? "*" : " ";
+        const dotMark = dim ? " " : UNREAD_GLYPH;
+        // Marker column is exactly 3 chars so title indentation lines up
+        // whether the row is starred or not.
+        const marker = `${starMark} ${dotMark}`;
+        const date = formatDate(article.published);
+        const title = truncate(article.title, titleMax);
+        const line1 = date ? `${marker} ${title} ${date}` : `${marker} ${title}`.trimEnd();
+        const attribution = article.author
+          ? `${article.originTitle ?? ""}  ·  ${article.author}`.replace(/^  ·  /, "")
+          : article.originTitle ?? "";
+        const line2 = truncate(attribution, metaMax);
+
+        // Cursor highlight overrides per-article dim/read color. Sticky-read
+        // (read but in keepIds) still uses the dim color when not selected.
+        const baseFg = selected ? "#101418" : dim ? "#8b949e" : "#f0f6fc";
+        const baseBg = selected ? "#d7ba7d" : undefined;
+
         return (
-          <text key={article.id} fg={selected ? "#101418" : article.isRead ? "#8b949e" : "#f0f6fc"} bg={selected ? "#d7ba7d" : undefined}>
-            {line}
-          </text>
+          <box key={article.id} flexDirection="column">
+            <text fg={baseFg} bg={baseBg}>
+              {line1}
+            </text>
+            <text fg={selected ? "#101418" : "#8b949e"} bg={baseBg}>
+              {line2}
+            </text>
+          </box>
         );
       })}
     </box>

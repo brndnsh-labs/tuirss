@@ -126,6 +126,15 @@ export function subscription(id: string, title: string): GReaderSubscription {
   return { id, title, categories: [] };
 }
 
+export function subscriptionWithCategory(
+  id: string,
+  title: string,
+  categoryId: string,
+  categoryLabel: string,
+): GReaderSubscription {
+  return { id, title, categories: [{ id: categoryId, label: categoryLabel }] };
+}
+
 export function item(id: string, feedId: string, title: string, body: string, published: number): GReaderItem {
   return {
     id,
