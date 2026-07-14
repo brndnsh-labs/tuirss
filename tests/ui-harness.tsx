@@ -9,6 +9,8 @@ import { SyncManager } from "../src/sync";
 import type { AppConfig, GReaderItem, GReaderSubscription, UnreadCountResponse } from "../src/types";
 import { App } from "../src/ui/App";
 
+type CapturedFrame = ReturnType<Awaited<ReturnType<typeof createTestRenderer>>["captureSpans"]>;
+
 export interface UiHarnessOptions {
   width?: number;
   height?: number;
@@ -23,6 +25,8 @@ export interface UiHarness {
   press: (...keys: string[]) => Promise<void>;
   /** Flush pending React updates and render one frame, returned as plain chars. */
   frame: () => Promise<string>;
+  /** Flush pending React updates and render one frame, returned as per-span data. */
+  spans: () => Promise<CapturedFrame>;
   resize: (width: number, height: number) => void;
   destroy: () => void;
 }
@@ -41,7 +45,7 @@ export async function renderApp(options: UiHarnessOptions = {}): Promise<UiHarne
 
   const sync = new SyncManager(new StubClient() as never, cache, harnessConfig);
 
-  const { renderer, mockInput, renderOnce, captureCharFrame, resize } = await createTestRenderer({
+  const { renderer, mockInput, renderOnce, captureCharFrame, captureSpans, resize } = await createTestRenderer({
     width: options.width ?? 110,
     height: options.height ?? 30,
     // Match main.tsx, which enables the kitty keyboard protocol; it also makes
@@ -87,6 +91,10 @@ export async function renderApp(options: UiHarnessOptions = {}): Promise<UiHarne
     frame: async () => {
       await flush();
       return captureCharFrame();
+    },
+    spans: async () => {
+      await flush();
+      return captureSpans();
     },
     resize,
     destroy: () => {

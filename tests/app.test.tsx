@@ -141,6 +141,190 @@ describe("App", () => {
   });
 });
 
+describe("navigation", () => {
+  const navFixtures = {
+    subscriptions: [subscription("feed/1", "Feed One"), subscription("feed/2", "Feed Two")],
+    items: [
+      item("item/1", "feed/1", "Feed One article", "Body one", 1710000300),
+      item("item/2", "feed/2", "Feed Two article", "Body two", 1710000200),
+    ],
+    unreadCounts: { unreadcounts: [{ id: "feed/1", count: 1 }, { id: "feed/2", count: 1 }] },
+  };
+
+  test("one-column mode shows a single pane at a time", async () => {
+    const ui = await renderApp({ ...navFixtures, width: 60, height: 20 });
+
+    // Reading level: articles pane is visible.
+    expect(await ui.frame()).toContain("Feed One article");
+    expect(await ui.frame()).not.toContain("Sources");
+
+    // h → sources level: feeds pane visible.
+    await ui.press("h");
+    const feeds = await ui.frame();
+    expect(feeds).toContain("Sources");
+    expect(feeds).not.toContain("Feed One article");
+
+    // l → reading level: articles pane visible.
+    await ui.press("l");
+    expect(await ui.frame()).toContain("Feed One article");
+
+    // l → reader pane visible.
+    await ui.press("l");
+    const reader = await ui.frame();
+    expect(reader).toContain("Reader");
+    expect(reader).toContain("Feed One article");
+    expect(reader).not.toContain("Feed Two article");
+
+    // h → articles, h → feeds.
+    await ui.press("h", "h");
+    expect(await ui.frame()).toContain("Sources");
+
+    ui.destroy();
+  });
+
+  test("two-column mode shows feeds+articles in sources and articles+reader in reading", async () => {
+    const ui = await renderApp({ ...navFixtures, width: 90, height: 20 });
+
+    // Reading level: articles + reader.
+    const reading = await ui.frame();
+    expect(reading).toContain("Feed One article");
+    expect(reading).toContain("Body one");
+    expect(reading).not.toContain("Sources");
+
+    // h → sources level: feeds + articles.
+    await ui.press("h");
+    const sources = await ui.frame();
+    expect(sources).toContain("Sources");
+    expect(sources).toContain("Feed One article"); // still showing active feed
+    expect(sources).not.toContain("Body one"); // reader hidden
+
+    // l → reading level: articles + reader.
+    await ui.press("l");
+    const back = await ui.frame();
+    expect(back).toContain("Body one");
+    expect(back).not.toContain("Sources");
+
+    // l focuses reader without changing the visible pair.
+    await ui.press("l");
+    const focused = await ui.frame();
+    expect(focused).toContain("Body one");
+    expect(focused).not.toContain("Sources");
+
+    ui.destroy();
+  });
+
+  test("three-column mode keeps all panes visible while h/l shifts focus", async () => {
+    const ui = await renderApp({ ...navFixtures, width: 130, height: 20 });
+
+    // All three panes are visible from the start.
+    const initial = await ui.frame();
+    expect(initial).toContain("Sources");
+    expect(initial).toContain("Feed One article");
+    expect(initial).toContain("Body one");
+
+    // h → focus feeds; all panes still visible.
+    await ui.press("h");
+    const feeds = await ui.frame();
+    expect(feeds).toContain("Sources");
+    expect(feeds).toContain("Feed One article");
+    expect(feeds).toContain("Body one");
+
+    // h again does nothing (already at the leftmost pane).
+    await ui.press("h");
+    expect(await ui.frame()).toContain("Sources");
+
+    // l → focus articles; all panes still visible.
+    await ui.press("l");
+    const articles = await ui.frame();
+    expect(articles).toContain("Sources");
+    expect(articles).toContain("Feed One article");
+    expect(articles).toContain("Body one");
+
+    // l → focus reader; all panes still visible.
+    await ui.press("l");
+    const reader = await ui.frame();
+    expect(reader).toContain("Sources");
+    expect(reader).toContain("Feed One article");
+    expect(reader).toContain("Body one");
+
+    // l again does nothing (already at the rightmost pane).
+    await ui.press("l");
+    expect(await ui.frame()).toContain("Body one");
+
+    ui.destroy();
+  });
+
+  test("active feed updates only when entering the reading pane", async () => {
+    const ui = await renderApp({ ...navFixtures, width: 130, height: 20 });
+
+    // Start by activating Feed One so the active feed is not "all feeds".
+    await ui.press("h");
+    // Layout: All Feeds(0), Feeds(1), Feed One(2), Feed Two(3).
+    await ui.press("j", "j");
+    await ui.press("l");
+    expect(await ui.frame()).toContain("Feed One article");
+    expect(await ui.frame()).not.toContain("Feed Two article");
+
+    // Move to sources and select Feed Two without activating it.
+    await ui.press("h");
+    await ui.press("j");
+    const sources = await ui.frame();
+    expect(sources).toContain("Feed Two"); // selected in sources pane
+    expect(sources).toContain("Feed One article"); // active feed still Feed One
+
+    // l enters reading and activates Feed Two.
+    await ui.press("l");
+    const reading = await ui.frame();
+    expect(reading).toContain("Feed Two article");
+    expect(reading).not.toContain("Feed One article");
+
+    ui.destroy();
+  });
+
+  test("returning to the same feed preserves the reading state", async () => {
+    const ui = await renderApp({ ...navFixtures, width: 130, height: 20 });
+
+    // Open the reader, which marks the article read.
+    await ui.press("l");
+    const first = await ui.frame();
+    expect(first).toContain("Body one");
+    expect(ui.cache.getArticle("item/1")?.isRead).toBe(true);
+
+    // Go back to feeds, then return to the same feed without changing the selection.
+    await ui.press("h");
+    await ui.press("l");
+    // The article should still be listed in the unread view (sticky) and the
+    // reader should still show it.
+    const returned = await ui.frame();
+    expect(returned).toContain("Feed One article");
+    expect(returned).toContain("Body one");
+
+    ui.destroy();
+  });
+
+  test("reader width estimate is accurate in three-column mode", async () => {
+    const ui = await renderApp({
+      subscriptions: [subscription("feed/1", "Feed One")],
+      items: [
+        item("item/1", "feed/1", "A very long article title that should truncate cleanly", "Body", 1710000300),
+      ],
+      unreadCounts: { unreadcounts: [{ id: "feed/1", count: 1 }] },
+      width: 130,
+      height: 20,
+    });
+
+    // Reader is the remaining width after feeds (38) and articles (42).
+    // The title should be truncated to fit the reader content area, not the
+    // full terminal width.
+    const frame = await ui.frame();
+    expect(frame).toContain("A very long article title"); // title is present
+    // The reader should not overflow its pane with the full untruncated title.
+    expect(frame).not.toContain("A very long article title that should truncate cleanly");
+
+    ui.destroy();
+  });
+});
+
 describe("Polish m1", () => {
   test("article rows render as 2 lines with the unread dot marker", async () => {
     const ui = await renderApp({

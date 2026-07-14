@@ -60,8 +60,8 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
   const { width, height } = useTerminalDimensions();
   const mode = layoutMode(width);
   const [snapshot, setSnapshot] = useState(initial);
-  const [navLevel, setNavLevel] = useState<NavLevel>("reading");
   const [focusedPane, setFocusedPane] = useState<Pane>("articles");
+  const navLevel: NavLevel = focusedPane === "feeds" ? "sources" : "reading";
   const [feedIndex, setFeedIndex] = useState(0);
   const [activeFeedId, setActiveFeedId] = useState<string | null>(null);
   const [selectedArticleId, setSelectedArticleId] = useState<string | null>(null);
@@ -154,12 +154,15 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
   const selectedArticle = snapshot.articles[articleIndex] ?? null;
 
   const enterReadingLevel = useCallback(() => {
-    setActiveFeedId(selectedSourceFeed?.id ?? null);
-    setNavLevel("reading");
+    const newFeedId = selectedSourceFeed?.id ?? null;
+    const feedChanged = newFeedId !== activeFeedId;
+    setActiveFeedId(newFeedId);
     setFocusedPane("articles");
-    setSelectedArticleId(null); // reconcile effect selects the first article of the new feed
-    setStickyReadIds(new Set()); // fresh sticky-read set per feed
-  }, [selectedSourceFeed?.id]);
+    if (feedChanged) {
+      setSelectedArticleId(null); // reconcile effect selects the first article of the new feed
+      setStickyReadIds(new Set()); // fresh sticky-read set per feed
+    }
+  }, [selectedSourceFeed?.id, activeFeedId]);
 
   const openArticle = useCallback(() => {
     setFocusedPane("reader");
@@ -177,23 +180,25 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
 
   const moveFocus = useCallback(
     (direction: -1 | 1) => {
-      if (direction < 0) {
-        setFocusedPane((current) => {
-          if (current === "reader") return "articles";
-          setNavLevel("sources");
-          return "feeds";
-        });
-        return;
+      const panes: Pane[] = ["feeds", "articles", "reader"];
+      const current = panes.indexOf(focusedPane);
+      const next = current + direction;
+      if (next < 0 || next >= panes.length) return;
+      const target = panes[next];
+      if (target === "feeds") {
+        setFocusedPane("feeds");
+      } else if (target === "articles") {
+        if (focusedPane === "feeds") {
+          enterReadingLevel();
+        } else {
+          setFocusedPane("articles");
+        }
+      } else {
+        // reader
+        if (focusedPane !== "reader") openArticle();
       }
-
-      if (navLevel === "sources" || focusedPane === "feeds") {
-        enterReadingLevel();
-        return;
-      }
-
-      if (focusedPane === "articles") openArticle();
     },
-    [enterReadingLevel, focusedPane, navLevel, openArticle],
+    [enterReadingLevel, focusedPane, openArticle],
   );
 
   const selectArticleAt = useCallback(
@@ -206,7 +211,7 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
 
   const moveSelection = useCallback(
     (direction: -1 | 1) => {
-      if (navLevel === "sources" || focusedPane === "feeds") {
+      if (focusedPane === "feeds") {
         setFeedIndex((current) => clampIndex(current + direction, sourceRowsLength));
       } else if (focusedPane === "articles") {
         selectArticleAt(articleIndex + direction);
@@ -214,12 +219,12 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
         readerScrollRef.current?.scrollBy(direction * READER_SCROLL_STEP);
       }
     },
-    [articleIndex, focusedPane, navLevel, selectArticleAt, sourceRowsLength],
+    [articleIndex, focusedPane, selectArticleAt, sourceRowsLength],
   );
 
   const jumpSelection = useCallback(
     (target: "top" | "bottom") => {
-      if (navLevel === "sources" || focusedPane === "feeds") {
+      if (focusedPane === "feeds") {
         setFeedIndex(target === "top" ? 0 : Math.max(0, sourceRowsLength - 1));
       } else if (focusedPane === "articles") {
         selectArticleAt(target === "top" ? 0 : snapshot.articles.length - 1);
@@ -228,16 +233,16 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
         if (scroll) scroll.scrollTo(target === "top" ? 0 : scroll.scrollHeight);
       }
     },
-    [focusedPane, navLevel, selectArticleAt, snapshot.articles.length, sourceRowsLength],
+    [focusedPane, selectArticleAt, snapshot.articles.length, sourceRowsLength],
   );
 
   const activate = useCallback(() => {
-    if (navLevel === "sources" || focusedPane === "feeds") {
+    if (focusedPane === "feeds") {
       enterReadingLevel();
     } else if (focusedPane === "articles") {
       openArticle();
     }
-  }, [enterReadingLevel, focusedPane, navLevel, openArticle]);
+  }, [enterReadingLevel, focusedPane, openArticle]);
 
   const cycleView = useCallback(() => {
     setView((current) => VIEW_ORDER[(VIEW_ORDER.indexOf(current) + 1) % VIEW_ORDER.length]);
@@ -339,52 +344,51 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
     }
   });
 
-  const statusSource = navLevel === "sources" ? selectedSourceFeed : activeFeed;
+  const statusSource = focusedPane === "feeds" ? selectedSourceFeed : activeFeed;
+
+  // Which panes are visible based on mode and navigation state.
+  const visiblePanes = useMemo(() => visiblePanesForMode(mode, focusedPane), [mode, focusedPane]);
+  const showFeeds = visiblePanes.includes("feeds");
+  const showArticles = visiblePanes.includes("articles");
+  const showReader = visiblePanes.includes("reader");
+  const feedsFocused = focusedPane === "feeds";
+  const articlesFocused = focusedPane === "articles";
+  const readerFocused = focusedPane === "reader";
 
   return (
     <box width="100%" height="100%" flexDirection="column" backgroundColor="#101418">
       <box flexGrow={1} width="100%" flexDirection="row" backgroundColor="#101418">
-        {navLevel === "sources" ? (
-          // Sources level: feed list, with the reader kept alongside in wide modes.
-          <>
-            <FeedPane
-              mode={mode}
-              focused
-              rows={sourceRows}
-              selectedIndex={feedIndex}
-              activeFeedId={activeFeedId}
-              height={height}
-            />
-            {mode !== "one" ? (
-              <ReaderPane mode={mode} focused={false} article={selectedArticle} width={width} scrollRef={readerScrollRef} />
-            ) : null}
-          </>
-        ) : (
-          // Reading level: article list plus reader (one pane at a time when narrow).
-          <>
-            {readingPanesForMode(mode, focusedPane).includes("articles") ? (
-              <ArticlePane
-                mode={mode}
-                focused={focusedPane === "articles"}
-                articles={snapshot.articles}
-                selectedIndex={articleIndex}
-                height={height}
-                sourceTitle={activeFeed?.title ?? `${VIEW_LABEL[view]}${view === "all" ? " Articles" : ""}`}
-                view={view}
-                terminalWidth={width}
-              />
-            ) : null}
-            {readingPanesForMode(mode, focusedPane).includes("reader") ? (
-              <ReaderPane
-                mode={mode}
-                focused={focusedPane === "reader"}
-                article={selectedArticle}
-                width={width}
-                scrollRef={readerScrollRef}
-              />
-            ) : null}
-          </>
-        )}
+        {showFeeds ? (
+          <FeedPane
+            mode={mode}
+            focused={feedsFocused}
+            rows={sourceRows}
+            selectedIndex={feedIndex}
+            activeFeedId={activeFeedId}
+            height={height}
+          />
+        ) : null}
+        {showArticles ? (
+          <ArticlePane
+            mode={mode}
+            focused={articlesFocused}
+            articles={snapshot.articles}
+            selectedIndex={articleIndex}
+            height={height}
+            sourceTitle={activeFeed?.title ?? `${VIEW_LABEL[view]}${view === "all" ? " Articles" : ""}`}
+            view={view}
+            terminalWidth={width}
+          />
+        ) : null}
+        {showReader ? (
+          <ReaderPane
+            mode={mode}
+            focused={readerFocused}
+            article={selectedArticle}
+            width={width}
+            scrollRef={readerScrollRef}
+          />
+        ) : null}
       </box>
       {helpOpen ? <HelpOverlay /> : null}
       <StatusBar
@@ -402,9 +406,15 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
   );
 }
 
-function readingPanesForMode(mode: LayoutMode, focusedPane: Pane): Pane[] {
-  if (mode === "one") return [focusedPane === "reader" ? "reader" : "articles"];
-  return ["articles", "reader"];
+function visiblePanesForMode(mode: LayoutMode, focusedPane: Pane): Pane[] {
+  switch (mode) {
+    case "one":
+      return [focusedPane === "reader" ? "reader" : focusedPane];
+    case "two":
+      return focusedPane === "feeds" ? ["feeds", "articles"] : ["articles", "reader"];
+    case "three":
+      return ["feeds", "articles", "reader"];
+  }
 }
 
 // Open a URL in the user's default browser. Best-effort across platforms; a
@@ -606,7 +616,7 @@ function ReaderPane({
   width: number;
   scrollRef: RefObject<ScrollBoxRenderable | null>;
 }) {
-  const readerWidth = mode === "three" ? width - 42 : mode === "two" ? width - 34 : width;
+  const readerWidth = mode === "three" ? width - 38 - 42 : mode === "two" ? width - 34 : width;
   const maxTitle = Math.max(20, readerWidth - 8);
   const markdown = useMemo(() => (article ? htmlToMarkdown(article.content || article.summary) : ""), [article]);
 
