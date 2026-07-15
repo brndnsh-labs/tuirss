@@ -2,6 +2,10 @@ export type Pane = "feeds" | "articles" | "reader";
 
 export type LayoutMode = "one" | "two" | "three";
 
+export type NavLevel = "sources" | "reading";
+
+export type ArticleView = "unread" | "all" | "starred";
+
 export interface AppConfig {
   server: {
     apiUrl: string;

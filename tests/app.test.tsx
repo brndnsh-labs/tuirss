@@ -117,7 +117,7 @@ describe("App", () => {
 
     expect(await ui.frame()).toContain("Unread");
     await ui.press("v");
-    expect(await ui.frame()).toContain("All Articles");
+    expect(await ui.frame()).toContain("All");
     await ui.press("v");
     const starred = await ui.frame();
     expect(starred).toContain("Starred");
@@ -136,6 +136,38 @@ describe("App", () => {
 
     await ui.press("ESCAPE");
     expect(await ui.frame()).not.toContain("cycle view");
+
+    ui.destroy();
+  });
+
+  test("/ opens a filter input that narrows the article list", async () => {
+    const ui = await renderApp(fixtures);
+
+    // Sanity: the unfiltered list shows all three articles.
+    expect(await ui.frame()).toContain("Newest article");
+    expect(await ui.frame()).toContain("Middle article");
+    expect(await ui.frame()).toContain("Oldest article");
+
+    await ui.press("/");
+    const opening = await ui.frame();
+    // The filter input row appears with its "filter:" prompt.
+    expect(opening).toContain("filter:");
+
+    // Typing into the input narrows the list to matching articles only.
+    await ui.type("New");
+    const filtered = await ui.frame();
+    expect(filtered).toContain("Newest article");
+    expect(filtered).not.toContain("Middle article");
+    expect(filtered).not.toContain("Oldest article");
+
+    // Submitting the filter (Enter) closes the input but keeps the filter
+    // applied — the list still shows only the matching article, and the
+    // input row is gone.
+    await ui.press("RETURN");
+    const afterSubmit = await ui.frame();
+    expect(afterSubmit).toContain("Newest article");
+    expect(afterSubmit).not.toContain("Middle article");
+    expect(afterSubmit).not.toContain("filter:");
 
     ui.destroy();
   });

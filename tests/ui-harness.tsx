@@ -23,6 +23,8 @@ export interface UiHarness {
   cache: CacheStore;
   /** Press keys through the mock terminal, then flush React + one render. */
   press: (...keys: string[]) => Promise<void>;
+  /** Type a string of characters one at a time, flushing after each. */
+  type: (text: string) => Promise<void>;
   /** Flush pending React updates and render one frame, returned as plain chars. */
   frame: () => Promise<string>;
   /** Flush pending React updates and render one frame, returned as per-span data. */
@@ -85,6 +87,12 @@ export async function renderApp(options: UiHarnessOptions = {}): Promise<UiHarne
     press: async (...keys: string[]) => {
       for (const key of keys) {
         mockInput.pressKey(key);
+        await flush();
+      }
+    },
+    type: async (text: string) => {
+      for (const char of text) {
+        mockInput.pressKey(char);
         await flush();
       }
     },
