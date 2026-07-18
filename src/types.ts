@@ -76,10 +76,6 @@ export interface GReaderSubscription {
   categories?: Array<{ id: string; label?: string }>;
 }
 
-export interface TagListResponse {
-  tags: Array<{ id: string; sortid?: string }>;
-}
-
 export interface UnreadCountResponse {
   max?: number;
   unreadcounts: Array<{

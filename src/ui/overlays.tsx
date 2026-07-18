@@ -44,7 +44,7 @@ export function StatusBar({
     <box height={1} width="100%" flexDirection="row" justifyContent="space-between" backgroundColor={COLORS.statusBarBg}>
       <text fg={COLORS.text}>{truncate(left, STATUS_SEGMENT_WIDTHS.left)}</text>
       <text fg={COLORS.textDim}>{truncate(middle, STATUS_SEGMENT_WIDTHS.middle)}</text>
-      <text fg={rightColor}>{truncate(right || snapshot.message, STATUS_SEGMENT_WIDTHS.right)}</text>
+      <text fg={rightColor}>{truncate(right, STATUS_SEGMENT_WIDTHS.right)}</text>
     </box>
   );
 }

@@ -2,7 +2,6 @@ import type {
   GReaderItem,
   StreamContentsResponse,
   SubscriptionListResponse,
-  TagListResponse,
   UnreadCountResponse,
 } from "./types";
 
@@ -55,12 +54,6 @@ export class GReaderClient {
 
   async getSubscriptions(): Promise<SubscriptionListResponse> {
     return this.requestJson<SubscriptionListResponse>("reader/api/0/subscription/list", {
-      query: { output: "json" },
-    });
-  }
-
-  async getTags(): Promise<TagListResponse> {
-    return this.requestJson<TagListResponse>("reader/api/0/tag/list", {
       query: { output: "json" },
     });
   }
@@ -131,23 +124,14 @@ export class GReaderClient {
   }
 
   private async requestJson<T>(path: string, options: RequestOptions = {}): Promise<T> {
-    const response = await this.fetcher(this.url(path, options.query), {
-      method: options.method ?? "GET",
-      body: options.body,
-      headers: {
-        ...this.authHeaders(),
-        ...(options.headers ?? {}),
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`${path} failed: ${response.status} ${await response.text()}`);
-    }
-
-    return (await response.json()) as T;
+    return (await this.request(path, options)).json() as T;
   }
 
   private async requestText(path: string, options: RequestOptions = {}): Promise<string> {
+    return (await this.request(path, options)).text();
+  }
+
+  private async request(path: string, options: RequestOptions = {}): Promise<Response> {
     const response = await this.fetcher(this.url(path, options.query), {
       method: options.method ?? "GET",
       body: options.body,
@@ -161,7 +145,7 @@ export class GReaderClient {
       throw new Error(`${path} failed: ${response.status} ${await response.text()}`);
     }
 
-    return response.text();
+    return response;
   }
 
   private authHeaders(): Record<string, string> {

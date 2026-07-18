@@ -361,7 +361,7 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
 function visiblePanesForMode(mode: LayoutMode, focusedPane: Pane): Pane[] {
   switch (mode) {
     case "one":
-      return [focusedPane === "reader" ? "reader" : focusedPane];
+      return [focusedPane];
     case "two":
       return focusedPane === "feeds" ? ["feeds", "articles"] : ["articles", "reader"];
     case "three":

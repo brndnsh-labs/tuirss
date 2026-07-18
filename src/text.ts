@@ -1,17 +1,3 @@
-export function htmlToText(input: string): string {
-  return decodeHtmlEntities(
-    input
-      .replace(/<\s*br\s*\/?\s*>/gi, "\n")
-      .replace(/<\/\s*(p|div|h[1-6]|li|blockquote|pre)\s*>/gi, "\n")
-      .replace(/<\s*li[^>]*>/gi, "- ")
-      .replace(/<script[\s\S]*?<\/script>/gi, "")
-      .replace(/<style[\s\S]*?<\/style>/gi, "")
-      .replace(/<[^>]+>/g, "")
-      .replace(/\n{3,}/g, "\n\n")
-      .trim(),
-  );
-}
-
 /**
  * Convert feed-article HTML into markdown for the reader. This is deliberately
  * regex-based rather than a full parser: RSS/Atom bodies are block-structured
@@ -118,20 +104,6 @@ export function decodeHtmlEntities(input: string): string {
 
     return named[lower] ?? match;
   });
-}
-
-export function clampIndex(index: number, length: number): number {
-  if (length <= 0) return 0;
-  return Math.max(0, Math.min(index, length - 1));
-}
-
-export function windowAround<T>(items: T[], selectedIndex: number, size: number): { offset: number; items: T[] } {
-  if (size <= 0) return { offset: 0, items: [] };
-
-  const selected = clampIndex(selectedIndex, items.length);
-  const half = Math.floor(size / 2);
-  const offset = Math.max(0, Math.min(Math.max(0, selected - half), Math.max(0, items.length - size)));
-  return { offset, items: items.slice(offset, offset + size) };
 }
 
 export function formatDate(timestamp: number | null): string {
