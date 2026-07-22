@@ -42,10 +42,10 @@ Run with `bun test tests/app.test.tsx` (or a scratch `tests/_*.test.tsx` you del
   front so the first `frame()` already shows article body; don't be surprised
   that a bare `createTestRenderer` + `<markdown>` renders blank for ~13 passes.
 - **Frozen clock**: the test renderer's clock doesn't auto-advance, so
-  `useTimeline` animations (the sources slide) never progress — the sources
-  layer overlaps the reading pane in captured frames. That's a harness artifact,
-  not a bug; assert with `toContain`, not on exact column layout, for anything
-  behind an animation.
+  `useTimeline` animations never progress — assert with `toContain`, not on
+  exact column layout, for anything behind an animation. (The pane swap is a
+  plain conditional render, not an animation; overlapping panes in a frame are
+  a real bug, not a harness artifact.)
 - **Debug scripts must live inside the repo** (e.g. `tests/_debug.tsx`, deleted
   after): running a script from outside pulls a second copy of `@opentui/core`
   and crashes with "Environment variable ... already registered".

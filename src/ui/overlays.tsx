@@ -6,7 +6,14 @@ import type { ArticleView, Feed, NavLevel } from "../types";
 import type { SyncSnapshot } from "../sync";
 import { truncate } from "../text";
 
-const STATUS_SEGMENT_WIDTHS = { left: 38, middle: 44, right: 50 } as const;
+// Segment proportions at a 132-col reference width; budgets scale with the
+// actual terminal width so narrow layouts don't overflow.
+const STATUS_SEGMENTS = { left: 38, middle: 44, right: 50 } as const;
+const REFERENCE_WIDTH = 132;
+
+function segmentBudget(width: number, cols: number): number {
+  return Math.max(8, Math.floor((width * cols) / REFERENCE_WIDTH));
+}
 
 export function StatusBar({
   snapshot,
@@ -18,6 +25,7 @@ export function StatusBar({
   navLevel,
   view,
   spinner,
+  width,
 }: {
   snapshot: SyncSnapshot;
   filter: string;
@@ -28,6 +36,7 @@ export function StatusBar({
   navLevel: NavLevel;
   view: ArticleView;
   spinner: string;
+  width: number;
 }) {
   const unread = snapshot.feeds.reduce((total, feed) => total + feed.unreadCount, 0);
   const status = busy ? `${spinner} syncing` : snapshot.status;
@@ -36,15 +45,17 @@ export function StatusBar({
     ? `${navLevel === "sources" ? "selected" : "source"}: ${selectedFeed.title}`
     : `source: ${activeFeed?.title ?? VIEW_LABEL[view]}`;
   const queue = snapshot.pendingMutations > 0 ? `${snapshot.pendingMutations} queued | ` : "";
-  const right = filterMode ? `/${filter}` : `${queue}${snapshot.message}`;
+  // An applied filter stays visible after the input row closes.
+  const filterLabel = filter ? `  /${filter}` : "";
+  const right = filterMode ? `/${filter}` : `${queue}${snapshot.message}${filterLabel}`;
   const rightColor =
     snapshot.status === "error" || snapshot.status === "offline" ? COLORS.danger : COLORS.accent;
 
   return (
     <box height={1} width="100%" flexDirection="row" justifyContent="space-between" backgroundColor={COLORS.statusBarBg}>
-      <text fg={COLORS.text}>{truncate(left, STATUS_SEGMENT_WIDTHS.left)}</text>
-      <text fg={COLORS.textDim}>{truncate(middle, STATUS_SEGMENT_WIDTHS.middle)}</text>
-      <text fg={rightColor}>{truncate(right, STATUS_SEGMENT_WIDTHS.right)}</text>
+      <text fg={COLORS.text}>{truncate(left, segmentBudget(width, STATUS_SEGMENTS.left))}</text>
+      <text fg={COLORS.textDim}>{truncate(middle, segmentBudget(width, STATUS_SEGMENTS.middle))}</text>
+      <text fg={rightColor}>{truncate(right, segmentBudget(width, STATUS_SEGMENTS.right))}</text>
     </box>
   );
 }
@@ -69,8 +80,8 @@ export function HelpOverlay() {
       <text fg={COLORS.text}>m read/unread   s star   v cycle view   o open in browser</text>
       <text fg={COLORS.text}>r sync   / filter   ? help   escape close   q quit</text>
       <text> </text>
-      <text fg={COLORS.textDim}>Opening an article marks it read; it stays listed (dimmed) until</text>
-      <text fg={COLORS.textDim}>you leave the feed. v cycles Unread / All / Starred.</text>
+      <text fg={COLORS.textDim}>Opening an article marks it read; it stays listed (dimmed)</text>
+      <text fg={COLORS.textDim}>until you leave the feed. v cycles Unread / All / Starred.</text>
     </box>
   );
 }

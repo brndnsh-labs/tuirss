@@ -168,6 +168,19 @@ describe("App", () => {
     expect(afterSubmit).toContain("Newest article");
     expect(afterSubmit).not.toContain("Middle article");
     expect(afterSubmit).not.toContain("filter:");
+    // The status bar keeps the applied filter visible after the input closes.
+    expect(afterSubmit).toContain("/New");
+
+    ui.destroy();
+  });
+
+  test("status bar fits narrow terminals without overflowing", async () => {
+    const ui = await renderApp({ ...fixtures, width: 80, height: 20 });
+
+    const frame = await ui.frame();
+    // The key segments still render (truncated to the narrower budgets).
+    expect(frame).toContain("Unread");
+    expect(frame).toContain("source:");
 
     ui.destroy();
   });

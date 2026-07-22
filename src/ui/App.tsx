@@ -22,7 +22,7 @@ interface AppProps {
 }
 
 export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
-  const { width, height } = useTerminalDimensions();
+  const { width } = useTerminalDimensions();
   const mode = layoutMode(width);
   const [snapshot, setSnapshot] = useState(initial);
   const [focusedPane, setFocusedPane] = useState<Pane>("articles");
@@ -265,6 +265,7 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
       ],
       bindings: [
         { key: "q", cmd: "quit" },
+        { key: "ctrl+c", cmd: "quit" },
         { key: "h", cmd: "focus-left" },
         { key: "l", cmd: "focus-right" },
         { key: "j", cmd: "move-down" },
@@ -309,7 +310,6 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
             onSelectedIndexChange={setFeedIndex}
             activeFeedId={activeFeedId}
             focused={feedsFocused}
-            height={height}
             mode={mode}
           />
         ) : null}
@@ -319,7 +319,6 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
             selectedArticleId={selectedArticleId}
             onSelect={setSelectedArticleId}
             focused={articlesFocused}
-            height={height}
             mode={mode}
             sourceTitle={activeFeed?.title ?? VIEW_LABEL[view]}
             view={view}
@@ -353,6 +352,7 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
         navLevel={navLevel}
         view={view}
         spinner={busy ? SPINNER_FRAMES[spinnerFrame] : ""}
+        width={width}
       />
     </box>
   );

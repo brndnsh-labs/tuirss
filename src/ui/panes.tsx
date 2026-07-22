@@ -1,12 +1,7 @@
 /** @jsxImportSource @opentui/react */
 
-import { type RefObject, useEffect, useMemo, useRef } from "react";
-import {
-  TextAttributes,
-  type SelectOption,
-  type SelectRenderable,
-  type ScrollBoxRenderable,
-} from "@opentui/core";
+import { type RefObject, useMemo } from "react";
+import { TextAttributes, type SelectOption, type ScrollBoxRenderable } from "@opentui/core";
 import type { Article, ArticleView, Feed, LayoutMode } from "../types";
 import { formatDate, htmlToMarkdown, truncate } from "../text";
 import {
@@ -65,19 +60,12 @@ export function buildSourceRows(feeds: Feed[]): SourceRow[] {
   return rows;
 }
 
-const SELECT_BG = "#1a1f25";
-const SELECT_TEXT = COLORS.text;
-const SELECT_TEXT_DIM = COLORS.textDim;
-const SELECT_SELECTED_BG = COLORS.accent;
-const SELECT_SELECTED_TEXT = COLORS.textInverse;
-
 export function Sources({
   rows,
   selectedIndex,
   onSelectedIndexChange,
   activeFeedId,
   focused,
-  height,
   mode,
 }: {
   rows: SourceRow[];
@@ -85,22 +73,10 @@ export function Sources({
   onSelectedIndexChange: (index: number) => void;
   activeFeedId: string | null;
   focused: boolean;
-  height: number;
   mode: LayoutMode;
 }) {
   const options = useMemo(() => rows.map((row) => rowToOption(row, activeFeedId)), [rows, activeFeedId]);
   const width = PANE_WIDTHS[mode].feeds;
-  const ref = useRef<SelectRenderable | null>(null);
-
-  useEffect(() => {
-    if (ref.current && ref.current.getSelectedIndex() !== selectedIndex) {
-      ref.current.setSelectedIndex(selectedIndex);
-    }
-  }, [selectedIndex, options]);
-
-  // Height inside the box: outer border (1) + padding (1) = 2 each side = 4
-  // total chrome. Leave 1 row of breathing room.
-  const innerHeight = Math.max(3, height - 5);
 
   return (
     <box width={width} height="100%" border borderColor={focused ? COLORS.borderFocused : COLORS.border} title="Sources" padding={1}>
@@ -108,17 +84,18 @@ export function Sources({
         <text fg={COLORS.textDim}>No feeds yet. Press r to sync.</text>
       ) : (
         <select
-          ref={ref}
           options={options}
-          height={innerHeight}
+          selectedIndex={selectedIndex}
+          flexGrow={1}
           showScrollIndicator
-          backgroundColor={SELECT_BG}
-          textColor={SELECT_TEXT}
-          focusedTextColor={SELECT_TEXT}
-          selectedBackgroundColor={SELECT_SELECTED_BG}
-          selectedTextColor={SELECT_SELECTED_TEXT}
-          descriptionColor={SELECT_TEXT_DIM}
-          selectedDescriptionColor={SELECT_TEXT_DIM}
+          showDescription={false}
+          backgroundColor={COLORS.surface}
+          textColor={COLORS.text}
+          focusedTextColor={COLORS.text}
+          selectedBackgroundColor={COLORS.accent}
+          selectedTextColor={COLORS.textInverse}
+          descriptionColor={COLORS.textDim}
+          selectedDescriptionColor={COLORS.textDim}
           onChange={(index) => onSelectedIndexChange(index)}
         />
       )}
@@ -146,7 +123,6 @@ export function ArticleList({
   focused,
   sourceTitle,
   view,
-  height,
   mode,
 }: {
   articles: Article[];
@@ -155,31 +131,18 @@ export function ArticleList({
   focused: boolean;
   sourceTitle: string;
   view: ArticleView;
-  height: number;
   mode: LayoutMode;
 }) {
   const options = useMemo(() => articles.map(articleToOption), [articles]);
-  const indexFromId = useMemo(() => {
-    const map = new Map<string, number>();
-    articles.forEach((article, index) => map.set(article.id, index));
-    return map;
-  }, [articles]);
-
-  const ref = useRef<SelectRenderable | null>(null);
-
-  // Keep the select's selectedIndex in sync with the app's id-based selection.
-  // Programmatic setSelectedIndex does not fire onChange, so this is a
-  // one-way sync that won't loop with onChange → setState.
-  useEffect(() => {
-    if (!ref.current) return;
-    const target = selectedArticleId ? indexFromId.get(selectedArticleId) ?? 0 : 0;
-    if (ref.current.getSelectedIndex() !== target) {
-      ref.current.setSelectedIndex(target);
-    }
-  }, [selectedArticleId, indexFromId]);
+  // Selection is controlled: the selectedIndex prop maps JSX → the renderable's
+  // clamping setter on every render, without firing onChange.
+  const selectedIndex = useMemo(() => {
+    if (!selectedArticleId) return 0;
+    const index = articles.findIndex((article) => article.id === selectedArticleId);
+    return index < 0 ? 0 : index;
+  }, [articles, selectedArticleId]);
 
   const width = PANE_WIDTHS[mode].articles;
-  const innerHeight = Math.max(2, height - 5);
 
   return (
     <box width={width} height="100%" border borderColor={focused ? COLORS.borderFocused : COLORS.border} title={sourceTitle} padding={1}>
@@ -187,17 +150,17 @@ export function ArticleList({
         <text fg={COLORS.textDim}>{EMPTY_BY_VIEW[view]}</text>
       ) : (
         <select
-          ref={ref}
           options={options}
-          height={innerHeight}
+          selectedIndex={selectedIndex}
+          flexGrow={1}
           showScrollIndicator
-          backgroundColor={SELECT_BG}
-          textColor={SELECT_TEXT}
-          focusedTextColor={SELECT_TEXT}
-          selectedBackgroundColor={SELECT_SELECTED_BG}
-          selectedTextColor={SELECT_SELECTED_TEXT}
-          descriptionColor={SELECT_TEXT_DIM}
-          selectedDescriptionColor={SELECT_TEXT_DIM}
+          backgroundColor={COLORS.surface}
+          textColor={COLORS.text}
+          focusedTextColor={COLORS.text}
+          selectedBackgroundColor={COLORS.accent}
+          selectedTextColor={COLORS.textInverse}
+          descriptionColor={COLORS.textDim}
+          selectedDescriptionColor={COLORS.textDim}
           onChange={(index) => onSelect(articles[index]?.id ?? null)}
         />
       )}
@@ -292,7 +255,7 @@ export function FilterInput({
   onSubmit: () => void;
 }) {
   return (
-    <box height={1} width="100%" flexDirection="row" alignItems="center" backgroundColor={COLORS.filterRowBg} paddingLeft={1} paddingRight={1}>
+    <box height={1} width="100%" flexDirection="row" alignItems="center" backgroundColor={COLORS.surface} paddingLeft={1} paddingRight={1}>
       <text fg={COLORS.accent}>filter:</text>
       <text> </text>
       <input
@@ -301,7 +264,7 @@ export function FilterInput({
         value={value}
         onInput={onChange}
         onSubmit={onSubmit}
-        backgroundColor={COLORS.filterRowBg}
+        backgroundColor={COLORS.surface}
         textColor={COLORS.text}
         cursorColor={COLORS.accent}
       />

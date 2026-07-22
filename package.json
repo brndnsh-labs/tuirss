@@ -11,9 +11,9 @@
     "check": "bun run typecheck && bun test"
   },
   "dependencies": {
-    "@opentui/core": "^0.2.6",
-    "@opentui/keymap": "^0.2.6",
-    "@opentui/react": "^0.2.6",
+    "@opentui/core": "0.4.5",
+    "@opentui/keymap": "0.4.5",
+    "@opentui/react": "0.4.5",
     "react": "^19.0.0"
   },
   "devDependencies": {

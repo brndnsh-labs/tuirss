@@ -3,7 +3,7 @@ import { RGBA, SyntaxStyle } from "@opentui/core";
 export const COLORS = {
   bg: "#101418",
   statusBarBg: "#1f252b",
-  filterRowBg: "#1a1f25",
+  surface: "#1a1f25",
   border: "#3a4450",
   borderFocused: "#d7ba7d",
   text: "#f0f6fc",
@@ -28,7 +28,7 @@ export const READER_SYNTAX = SyntaxStyle.fromStyles({
   "markup.link": { fg: RGBA.fromHex(COLORS.readerLink), underline: true },
   "markup.link.label": { fg: RGBA.fromHex(COLORS.readerLink), underline: true },
   "markup.link.url": { fg: RGBA.fromHex(COLORS.readerLink), underline: true },
-  "markup.strong": { fg: RGBA.fromHex("#f0f6fc"), bold: true },
+  "markup.strong": { fg: RGBA.fromHex(COLORS.text), bold: true },
   "markup.italic": { fg: RGBA.fromHex(COLORS.readerBody), italic: true },
   default: { fg: RGBA.fromHex(COLORS.readerBody) },
 });
