@@ -20,6 +20,7 @@ export function StatusBar({
   filter,
   filterMode,
   busy,
+  autoRead,
   selectedFeed,
   activeFeed,
   navLevel,
@@ -31,6 +32,7 @@ export function StatusBar({
   filter: string;
   filterMode: boolean;
   busy: boolean;
+  autoRead: boolean;
   selectedFeed: Feed | null;
   activeFeed: Feed | null;
   navLevel: NavLevel;
@@ -40,7 +42,7 @@ export function StatusBar({
 }) {
   const unread = snapshot.feeds.reduce((total, feed) => total + feed.unreadCount, 0);
   const status = busy ? `${spinner} syncing` : snapshot.status;
-  const left = `${status}  \u00B7  ${VIEW_LABEL[view]}  \u00B7  unread ${unread}`;
+  const left = `${status}  \u00B7  ${VIEW_LABEL[view]}  \u00B7  unread ${unread}${autoRead ? "  \u00B7  auto" : ""}`;
   const middle = selectedFeed
     ? `${navLevel === "sources" ? "selected" : "source"}: ${selectedFeed.title}`
     : `source: ${activeFeed?.title ?? VIEW_LABEL[view]}`;
@@ -77,8 +79,9 @@ export function HelpOverlay() {
       <text fg={COLORS.text}>j/k move   g/G top/bottom   enter/l open   h back</text>
       <text fg={COLORS.text}>in reader: j/k scroll   g/G jump to top/bottom</text>
       <text> </text>
-      <text fg={COLORS.text}>m read/unread   s star   v cycle view   o open in browser</text>
-      <text fg={COLORS.text}>r sync   / filter   ? help   escape close   q quit</text>
+      <text fg={COLORS.text}>m read/unread   s star   a auto-read   v cycle view</text>
+      <text fg={COLORS.text}>o open in browser   r sync   / filter   ? help</text>
+      <text fg={COLORS.text}>escape close   q quit</text>
       <text> </text>
       <text fg={COLORS.textDim}>Opening an article marks it read; it stays listed (dimmed)</text>
       <text fg={COLORS.textDim}>until you leave the feed. v cycles Unread / All / Starred.</text>

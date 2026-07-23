@@ -128,6 +128,35 @@ describe("App", () => {
     ui.destroy();
   });
 
+  test("a toggles auto-read: j marks each landed article read while on", async () => {
+    // Wide enough that the status bar's left segment fits the auto indicator.
+    const ui = await renderApp({ ...fixtures, width: 140, height: 20 });
+
+    // Off by default: moving does not mark read.
+    await ui.press("j");
+    await ui.frame();
+    expect(ui.cache.getArticle("item/2")?.isRead).toBe(false);
+
+    await ui.press("a");
+    expect(await ui.frame()).toContain("auto"); // status-bar indicator
+
+    await ui.press("j"); // land on "Oldest article"
+    await ui.frame();
+    expect(ui.cache.getArticle("item/3")?.isRead).toBe(true);
+    // The passed-over "Middle article" was landed on while off, so it stays
+    // unread; the read one stays listed (dimmed) in the unread view.
+    expect(ui.cache.getArticle("item/2")?.isRead).toBe(false);
+    expect(await ui.frame()).toContain("Oldest article");
+
+    // Toggling off stops marking: landing on Middle leaves it unread.
+    await ui.press("a");
+    await ui.press("k");
+    await ui.frame();
+    expect(ui.cache.getArticle("item/2")?.isRead).toBe(false);
+
+    ui.destroy();
+  });
+
   test("? toggles the help overlay", async () => {
     const ui = await renderApp(fixtures);
 

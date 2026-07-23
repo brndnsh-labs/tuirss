@@ -4,7 +4,7 @@ import { useBindings } from "@opentui/keymap/react";
 import { useTerminalDimensions } from "@opentui/react";
 import type { CliRenderer, ScrollBoxRenderable } from "@opentui/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ArticleView, Feed, LayoutMode, NavLevel, Pane } from "../types";
+import type { Article, ArticleView, Feed, LayoutMode, NavLevel, Pane } from "../types";
 import type { SyncManager, SyncSnapshot } from "../sync";
 import { layoutMode } from "../text";
 import { ArticleList, FilterInput, Reader, Sources, buildSourceRows, VIEW_LABEL } from "./panes";
@@ -34,6 +34,8 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
   // Articles read during this viewing that should stay visible (dimmed) until
   // the feed or view changes, so the cursor doesn't jump when you read one.
   const [stickyReadIds, setStickyReadIds] = useState<Set<string>>(() => new Set());
+  // Skim mode: moving the article cursor marks each landed article read.
+  const [autoRead, setAutoRead] = useState(false);
   const [filterMode, setFilterMode] = useState(false);
   const [filter, setFilter] = useState("");
   const [helpOpen, setHelpOpen] = useState(false);
@@ -123,19 +125,25 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
     }
   }, [selectedSourceRow, activeFeedId]);
 
+  // Marking read adds the id to the sticky set so the row stays listed
+  // (dimmed) until the feed or view changes. The sticky change re-runs the
+  // cache refresh effect, and setRead writes to SQLite synchronously before
+  // its first await, so that refresh already sees the new read state — no
+  // manual refresh here, which would query with pre-sticky options and
+  // briefly drop the article, jumping the cursor.
+  const markRead = useCallback(
+    (article: Article) => {
+      setStickyReadIds((prev) => new Set(prev).add(article.id));
+      void sync.setRead(article, true);
+    },
+    [sync],
+  );
+
   const openArticle = useCallback(() => {
     setFocusedPane("reader");
     const article = snapshot.articles.find((candidate) => candidate.id === selectedArticleId);
-    if (article && !article.isRead) {
-      // Adding to the sticky set changes articleOptions, which re-runs the
-      // cache refresh effect. setRead writes to SQLite synchronously before its
-      // first await, so that refresh already sees the new read state — no manual
-      // refresh here, which would query with the pre-sticky options and briefly
-      // drop the article, jumping the cursor.
-      setStickyReadIds((prev) => new Set(prev).add(article.id));
-      void sync.setRead(article, true);
-    }
-  }, [selectedArticleId, snapshot.articles, sync]);
+    if (article && !article.isRead) markRead(article);
+  }, [selectedArticleId, snapshot.articles, markRead]);
 
   const moveFocus = useCallback(
     (direction: -1 | 1) => {
@@ -191,9 +199,12 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
       const currentIndex = snapshot.articles.findIndex((article) => article.id === selectedArticleId);
       const nextIndex = currentIndex < 0 ? 0 : Math.max(0, Math.min(currentIndex + direction, snapshot.articles.length - 1));
       const nextArticle = snapshot.articles[nextIndex];
-      if (nextArticle) setSelectedArticleId(nextArticle.id);
+      if (nextArticle) {
+        setSelectedArticleId(nextArticle.id);
+        if (autoRead && !nextArticle.isRead) markRead(nextArticle);
+      }
     },
-    [focusedPane, selectedArticleId, snapshot.articles, sourceRowsLength],
+    [focusedPane, selectedArticleId, snapshot.articles, sourceRowsLength, autoRead, markRead],
   );
 
   const activate = useCallback(() => {
@@ -252,6 +263,7 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
         { name: "toggle-read", run: () => void toggleRead() },
         { name: "toggle-starred", run: () => void toggleStarred() },
         { name: "cycle-view", run: () => cycleView() },
+        { name: "toggle-autoread", run: () => setAutoRead((on) => !on) },
         { name: "open-browser", run: () => openInBrowser() },
         { name: "filter", run: () => setFilterMode(true) },
         { name: "help", run: () => setHelpOpen((open) => !open) },
@@ -278,6 +290,7 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
         { key: "m", cmd: "toggle-read" },
         { key: "s", cmd: "toggle-starred" },
         { key: "v", cmd: "cycle-view" },
+        { key: "a", cmd: "toggle-autoread" },
         { key: "o", cmd: "open-browser" },
         { key: "/", cmd: "filter" },
         { key: "?", cmd: "help" },
@@ -347,6 +360,7 @@ export function App({ sync, renderer, initial, syncOnStart }: AppProps) {
         filter={filter}
         filterMode={filterMode}
         busy={busy}
+        autoRead={autoRead}
         selectedFeed={statusSource}
         activeFeed={activeFeed}
         navLevel={navLevel}
