@@ -13,3 +13,5 @@ path = "./tuirss.db"
 page_size = 50
 max_pages = 6
 sync_on_start = true
+# Read, unstarred articles older than this are deleted from the local cache.
+prune_days = 30

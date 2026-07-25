@@ -19,6 +19,7 @@ export interface AppConfig {
     pageSize: number;
     maxPages: number;
     syncOnStart: boolean;
+    pruneDays: number;
   };
 }
 

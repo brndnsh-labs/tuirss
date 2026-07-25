@@ -22,6 +22,7 @@ describe("config", () => {
     expect(config.sync.pageSize).toBe(50);
     expect(config.sync.maxPages).toBe(6);
     expect(config.sync.syncOnStart).toBe(true);
+    expect(config.sync.pruneDays).toBe(30);
   });
 
   test("rejects placeholder credentials", () => {

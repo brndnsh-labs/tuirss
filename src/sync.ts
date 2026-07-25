@@ -61,6 +61,7 @@ export class SyncManager {
       emit();
       this.syncedArticles = await this.syncReadingList();
       this.cache.setState("last_sync_at", String(Date.now()));
+      this.cache.pruneArticles(this.config.sync.pruneDays);
 
       this.status = "idle";
       this.message = `Synced ${this.syncedArticles} articles`;

@@ -93,27 +93,25 @@ export class GReaderClient {
   async editTag(itemIds: string[], add: string[], remove: string[]): Promise<void> {
     if (itemIds.length === 0) return;
 
-    const body = new URLSearchParams();
-    body.set("T", await this.getToken());
-    body.set("ac", "edit-tags");
-    body.set("async", "true");
-
-    for (const id of itemIds) body.append("i", id);
-    for (const tag of add) body.append("a", tag);
-    for (const tag of remove) body.append("r", tag);
-
-    const response = await this.fetcher(this.url("reader/api/0/edit-tag"), {
+    await this.request("reader/api/0/edit-tag", {
       method: "POST",
-      body,
+      // Built lazily so a 401 retry re-fetches the write token.
+      body: async () => {
+        const body = new URLSearchParams();
+        body.set("T", await this.getToken());
+        body.set("ac", "edit-tags");
+        body.set("async", "true");
+
+        for (const id of itemIds) body.append("i", id);
+        for (const tag of add) body.append("a", tag);
+        for (const tag of remove) body.append("r", tag);
+
+        return body;
+      },
       headers: {
-        ...this.authHeaders(),
         "Content-Type": "application/x-www-form-urlencoded",
       },
     });
-
-    if (!response.ok) {
-      throw new Error(`edit-tag failed: ${response.status} ${await response.text()}`);
-    }
   }
 
   private async getToken(): Promise<string> {
@@ -131,15 +129,23 @@ export class GReaderClient {
     return (await this.request(path, options)).text();
   }
 
-  private async request(path: string, options: RequestOptions = {}): Promise<Response> {
+  private async request(path: string, options: RequestOptions = {}, retried = false): Promise<Response> {
     const response = await this.fetcher(this.url(path, options.query), {
       method: options.method ?? "GET",
-      body: options.body,
+      body: typeof options.body === "function" ? await options.body() : options.body,
       headers: {
         ...this.authHeaders(),
         ...(options.headers ?? {}),
       },
     });
+
+    // FreshRSS auth tokens expire mid-session; drop them, re-login, retry once.
+    if (response.status === 401 && !retried) {
+      this.auth = null;
+      this.token = null;
+      await this.login();
+      return this.request(path, options, true);
+    }
 
     if (!response.ok) {
       throw new Error(`${path} failed: ${response.status} ${await response.text()}`);
@@ -173,7 +179,7 @@ export class GReaderClient {
 interface RequestOptions {
   method?: string;
   query?: Record<string, string | number | boolean | undefined>;
-  body?: BodyInit;
+  body?: BodyInit | (() => BodyInit | Promise<BodyInit>);
   headers?: Record<string, string>;
 }
 

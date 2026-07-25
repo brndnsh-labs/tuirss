@@ -84,5 +84,6 @@ const testConfig: AppConfig = {
     pageSize: 50,
     maxPages: 1,
     syncOnStart: false,
+    pruneDays: 30,
   },
 };

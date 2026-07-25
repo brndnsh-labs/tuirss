@@ -1,6 +1,7 @@
 /** @jsxImportSource @opentui/react */
 
 import { createTestRenderer } from "@opentui/core/testing";
+import { getTreeSitterClient } from "@opentui/core";
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
 import { KeymapProvider } from "@opentui/keymap/react";
 import { createRoot } from "@opentui/react";
@@ -56,6 +57,15 @@ export async function renderApp(options: UiHarnessOptions = {}): Promise<UiHarne
   });
   const keymap = createDefaultOpenTuiKeymap(renderer);
 
+  // Markdown body text renders through tree-sitter (filetype "markdown"), so
+  // nothing paints until the worker is up and the parser loaded — cold that's
+  // ~70ms and per-test timing races. The client is process-global: pay both
+  // once here, up front, and every markdown mount afterwards paints within a
+  // single flush. (Code fences in fixtures load their own parsers lazily.)
+  const treeSitter = getTreeSitterClient();
+  await treeSitter.initialize();
+  await treeSitter.preloadParser("markdown");
+
   createRoot(renderer).render(
     <KeymapProvider keymap={keymap}>
       <App sync={sync} renderer={renderer} initial={sync.snapshot({ unreadOnly: true })} syncOnStart={false} />
@@ -71,16 +81,25 @@ export async function renderApp(options: UiHarnessOptions = {}): Promise<UiHarne
     }
   };
 
-  // The markdown renderable spins up a Tree-sitter worker on its first mount;
-  // that init is async and process-global, so pay it once up front (~40ms) and
-  // every later render — including markdown remounts on article change — is fast.
-  const warmup = async () => {
+  // Render until two consecutive frames match — then the UI has nothing left
+  // pending. Each iteration is ~20ms so a warm tree-sitter round-trip (~10ms)
+  // always lands inside one iteration and can't fake a stable frame.
+  async function settle<T>(capture: () => T): Promise<T> {
+    let previous: string | undefined;
     for (let i = 0; i < 25; i += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 3));
-      await renderOnce();
+      for (let j = 0; j < 4; j += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        await renderOnce();
+      }
+      const current = capture();
+      const serialized = JSON.stringify(current);
+      if (serialized === previous) return current;
+      previous = serialized;
     }
-  };
-  await warmup();
+    throw new Error("UI did not settle: frame kept changing for 25 iterations");
+  }
+
+  await settle(captureCharFrame);
 
   return {
     cache,
@@ -96,14 +115,8 @@ export async function renderApp(options: UiHarnessOptions = {}): Promise<UiHarne
         await flush();
       }
     },
-    frame: async () => {
-      await flush();
-      return captureCharFrame();
-    },
-    spans: async () => {
-      await flush();
-      return captureSpans();
-    },
+    frame: () => settle(captureCharFrame),
+    spans: () => settle(captureSpans),
     resize,
     destroy: () => {
       renderer.destroy();
@@ -135,7 +148,7 @@ const harnessConfig: AppConfig = {
     password: "secret",
   },
   cache: { path: ":memory:" },
-  sync: { pageSize: 50, maxPages: 1, syncOnStart: false },
+  sync: { pageSize: 50, maxPages: 1, syncOnStart: false, pruneDays: 30 },
 };
 
 export function subscription(id: string, title: string): GReaderSubscription {

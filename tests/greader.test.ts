@@ -92,4 +92,78 @@ describe("GReaderClient", () => {
   test("encodes stream id path segments but not the separators", () => {
     expect(encodeStreamId("user/-/label/Tech News")).toBe("user/-/label/Tech%20News");
   });
+
+  test("re-logs in and retries once when a read returns 401", async () => {
+    const calls: Array<{ url: string; auth?: string }> = [];
+    let logins = 0;
+    let failedOnce = false;
+    const fetcher = async (url: string | URL | Request, init?: RequestInit) => {
+      const target = String(url);
+      calls.push({ url: target, auth: (init?.headers as Record<string, string> | undefined)?.Authorization });
+      if (target.includes("ClientLogin")) {
+        logins += 1;
+        return new Response(`Auth=token-${logins}\n`);
+      }
+      if (target.includes("subscription/list") && !failedOnce) {
+        failedOnce = true;
+        return new Response("Unauthorized", { status: 401 });
+      }
+      return Response.json({ subscriptions: [] });
+    };
+
+    const client = new GReaderClient(
+      {
+        apiUrl: "http://example.test/api/greader.php",
+        username: "alice",
+        password: "secret",
+      },
+      fetcher as typeof fetch,
+    );
+
+    await client.login();
+    await client.getSubscriptions();
+
+    expect(logins).toBe(2);
+    expect(calls[3].url).toContain("subscription/list");
+    expect(calls[3].auth).toBe("GoogleLogin auth=token-2");
+  });
+
+  test("re-logs in and retries edit-tag when the write token expired", async () => {
+    const bodies: string[] = [];
+    let logins = 0;
+    let failedOnce = false;
+    const fetcher = async (url: string | URL | Request, init?: RequestInit) => {
+      const target = String(url);
+      if (target.includes("ClientLogin")) {
+        logins += 1;
+        return new Response(`Auth=token-${logins}\n`);
+      }
+      if (target.endsWith("/token")) return new Response(`write-token-${logins}`);
+      if (target.endsWith("/edit-tag")) {
+        bodies.push(String(init?.body));
+        if (!failedOnce) {
+          failedOnce = true;
+          return new Response("Unauthorized", { status: 401 });
+        }
+        return new Response("OK");
+      }
+      return Response.json({});
+    };
+
+    const client = new GReaderClient(
+      {
+        apiUrl: "http://example.test/api/greader.php",
+        username: "alice",
+        password: "secret",
+      },
+      fetcher as typeof fetch,
+    );
+
+    await client.login();
+    await client.markRead(["item-1"], true);
+
+    expect(logins).toBe(2);
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]).toContain("T=write-token-2");
+  });
 });

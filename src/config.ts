@@ -64,6 +64,7 @@ export function parseConfig(parsed: Record<string, unknown>): AppConfig {
       pageSize: readPositiveInteger(sync, "page_size", 50),
       maxPages: readPositiveInteger(sync, "max_pages", 6),
       syncOnStart: readBoolean(sync, "sync_on_start", true),
+      pruneDays: readPositiveInteger(sync, "prune_days", 30),
     },
   };
 }

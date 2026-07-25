@@ -109,6 +109,22 @@ export class CacheStore {
           $updatedAt: Date.now(),
         });
       }
+
+      // Feeds unsubscribed on the server leave the sidebar.
+      const ids = items.map((item) => item.id);
+      if (ids.length === 0) {
+        this.db.exec("DELETE FROM feeds");
+      } else {
+        const params: Record<string, string> = {};
+        const placeholders = ids
+          .map((id, index) => {
+            const key = `$keep${index}`;
+            params[key] = id;
+            return key;
+          })
+          .join(", ");
+        this.db.prepare(`DELETE FROM feeds WHERE id NOT IN (${placeholders})`).run(params);
+      }
     });
 
     tx(subscriptions);
@@ -258,7 +274,23 @@ export class CacheStore {
   }
 
   markArticleRead(articleId: string, read: boolean): void {
-    this.db.prepare("UPDATE articles SET is_read = ? WHERE id = ?").run(read ? 1 : 0, articleId);
+    const tx = this.db.transaction(() => {
+      // Keep the feed's unread badge in step locally. The badge UPDATE runs
+      // first, conditioned on the article's current state, so re-marking an
+      // already-read article doesn't double-decrement.
+      if (read) {
+        this.db
+          .prepare("UPDATE feeds SET unread_count = MAX(0, unread_count - 1) WHERE id = (SELECT feed_id FROM articles WHERE id = ? AND is_read = 0)")
+          .run(articleId);
+      } else {
+        this.db
+          .prepare("UPDATE feeds SET unread_count = unread_count + 1 WHERE id = (SELECT feed_id FROM articles WHERE id = ? AND is_read = 1)")
+          .run(articleId);
+      }
+      this.db.prepare("UPDATE articles SET is_read = ? WHERE id = ?").run(read ? 1 : 0, articleId);
+    });
+
+    tx();
   }
 
   markArticleStarred(articleId: string, starred: boolean): void {
@@ -266,14 +298,21 @@ export class CacheStore {
   }
 
   enqueueMutation(articleId: string, action: PendingMutation["action"], desiredState: boolean, error: string | null = null): void {
-    this.db
-      .prepare(
-        `
-          INSERT INTO pending_mutations (article_id, action, desired_state, created_at, last_error)
-          VALUES (?, ?, ?, ?, ?)
-        `,
-      )
-      .run(articleId, action, desiredState ? 1 : 0, Date.now(), error);
+    const tx = this.db.transaction(() => {
+      // Last write wins per (article, action): toggling read five times
+      // offline replays only the final state, not the whole flip-flop.
+      this.db.prepare("DELETE FROM pending_mutations WHERE article_id = ? AND action = ?").run(articleId, action);
+      this.db
+        .prepare(
+          `
+            INSERT INTO pending_mutations (article_id, action, desired_state, created_at, last_error)
+            VALUES (?, ?, ?, ?, ?)
+          `,
+        )
+        .run(articleId, action, desiredState ? 1 : 0, Date.now(), error);
+    });
+
+    tx();
   }
 
   listPendingMutations(): PendingMutation[] {
@@ -289,6 +328,22 @@ export class CacheStore {
 
   markPendingMutationError(id: number, error: string): void {
     this.db.prepare("UPDATE pending_mutations SET last_error = ? WHERE id = ?").run(error, id);
+  }
+
+  // Delete read, unstarred articles older than the cutoff. Mirrors FreshRSS's
+  // own retention so the local cache doesn't grow forever. Returns the count.
+  pruneArticles(olderThanDays: number): number {
+    const cutoffSeconds = Math.floor(Date.now() / 1000) - olderThanDays * 86_400;
+    const result = this.db
+      .prepare(
+        `
+          DELETE FROM articles
+          WHERE is_read = 1 AND is_starred = 0
+            AND COALESCE(published, updated, synced_at / 1000) < ?
+        `,
+      )
+      .run(cutoffSeconds);
+    return result.changes;
   }
 
   getState(key: string): string | null {
