@@ -3,11 +3,13 @@ name: CI
 # Runs tuirss's gates (typecheck + tests, same as `bun run check`) on every PR to
 # main and on main itself.
 #
-# Bun project: the host-mode Forgejo Actions runner on ghrunner01 (LXC 707) only
-# bootstraps node, so we bring bun in per-job via oven-sh/setup-bun (resolves from
-# github.com — forgejo app.ini DEFAULT_ACTIONS_URL=github). runs-on MUST be exactly
-# [self-hosted]: the runner advertises only [self-hosted ensemble], so GitHub's
-# default [self-hosted, Linux, X64] would sit in "waiting" forever.
+# Runs on GitHub-hosted runners, not ghrunner01: this repo is public, and the org's
+# self-hosted runner group sets allows_public_repositories=false (a fork PR would
+# otherwise execute arbitrary code on the box). A public repo pinned to
+# `self-hosted` queues forever with no error, so do not "fix" it that way.
+#
+# Bun is not preinstalled on ubuntu-latest, so it comes in per-job via
+# oven-sh/setup-bun.
 
 on:
   pull_request:
@@ -21,10 +23,13 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   gates:
     name: gates
-    runs-on: [self-hosted]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 

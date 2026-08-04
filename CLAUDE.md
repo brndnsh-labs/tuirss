@@ -17,7 +17,7 @@ Running the app requires `config.toml` (copy from `config.example.toml`; it hold
 
 To verify UI changes, drive the real `App` headlessly with `tests/ui-harness.tsx` (OpenTUI test renderer + mock keys; examples in `tests/app.test.tsx`, gotchas in `.claude/skills/verify-tui/SKILL.md`). Don't launch `bun run start` from an agent shell — it's a fullscreen app that needs a live server.
 
-CI is Forgejo Actions (`.forgejo/workflows/ci.yml`) on a self-hosted runner; `runs-on` must stay exactly `[self-hosted]` — extra labels leave the job waiting forever.
+CI is GitHub Actions (`.github/workflows/ci.yml`) on GitHub-hosted `ubuntu-latest`. This repo is public, and the org's self-hosted runner group refuses public repos, so don't switch it to `[self-hosted]` — the job would queue forever with no error. Bun isn't preinstalled on the hosted image; it comes in via `oven-sh/setup-bun`.
 
 ## Architecture
 
