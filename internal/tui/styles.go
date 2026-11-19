@@ -25,7 +25,7 @@ type styles struct {
 	sideHead, sideItem, sideEmpty      lipgloss.Style
 	sideSel, sideCount, sideErr        lipgloss.Style
 	acct, acctActive, acctMark         lipgloss.Style
-	bar, dot, star                     lipgloss.Style
+	bar, dot, star, fresh, freshTitle  lipgloss.Style
 	titleUnread, titleRead, titleCur   lipgloss.Style
 	meta, day                          lipgloss.Style
 	rTitle, rMeta, rLink, rRule        lipgloss.Style
@@ -58,6 +58,8 @@ func newStyles() styles {
 		bar:         n().Foreground(cAccent),
 		dot:         n().Foreground(cAccent),
 		star:        n().Foreground(cStar),
+		fresh:       n().Foreground(cStar).Bold(true),
+		freshTitle:  n().Foreground(cAccent).Bold(true),
 		titleUnread: n(),
 		titleRead:   n().Foreground(cMuted),
 		titleCur:    n().Bold(true),

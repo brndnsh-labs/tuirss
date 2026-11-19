@@ -93,6 +93,15 @@ func press(m *Model, keys ...string) {
 			msg = tea.KeyPressMsg{Code: r, Text: k}
 		}
 		m.Update(msg)
+		settleScroll(m)
+	}
+}
+
+// settleScroll runs animation frames until any reader scroll finishes, like a
+// person waiting a moment between keys.
+func settleScroll(m *Model) {
+	for i := 0; i < 200 && m.scroll.active; i++ {
+		m.Update(animMsg{})
 	}
 }
 

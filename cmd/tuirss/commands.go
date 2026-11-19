@@ -51,6 +51,7 @@ func cmdTUI(ctx context.Context, a *app, args []string) error {
 		RefreshInterval: a.cfg.RefreshInterval.Duration,
 		FullText:        fulltext.New(),
 		NoImages:        os.Getenv("TUIRSS_IMAGES") == "0",
+		NoAnimations:    !a.cfg.Animations,
 	})
 }
 

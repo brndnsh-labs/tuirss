@@ -30,9 +30,11 @@ func (d Duration) MarshalText() ([]byte, error) { return []byte(d.String()), nil
 
 type Config struct {
 	// RefreshInterval is how often feeds refresh while tuirss is running.
-	RefreshInterval Duration   `toml:"refresh_interval"`
-	Local           Local      `toml:"local"`
-	FreshRSS        []FreshRSS `toml:"freshrss"`
+	RefreshInterval Duration `toml:"refresh_interval"`
+	// Animations turns on smooth scrolling and new-article highlights.
+	Animations bool       `toml:"animations"`
+	Local      Local      `toml:"local"`
+	FreshRSS   []FreshRSS `toml:"freshrss"`
 }
 
 // Local configures feeds that tuirss fetches itself.
@@ -55,6 +57,7 @@ type FreshRSS struct {
 func Default() Config {
 	return Config{
 		RefreshInterval: Duration{30 * time.Minute},
+		Animations:      true,
 		Local: Local{
 			Enabled:     true,
 			Concurrency: 8,
@@ -128,6 +131,9 @@ const Example = `# tuirss configuration
 
 # How often to refresh feeds while tuirss is running.
 refresh_interval = "30m"
+
+# Smooth scrolling and a brief highlight for newly arrived articles.
+animations = true
 
 [local]
 # Feeds tuirss fetches itself. Add them with ` + "`tuirss add <url>`" + ` or

@@ -44,6 +44,10 @@ from the web page and shows it in the reader (cached after the first fetch);
 recent xterm, …), detected automatically. Elsewhere — including inside tmux —
 they show as `▣` placeholders. Set `TUIRSS_IMAGES=0` to turn them off.
 
+**Animations:** the reader scrolls smoothly, and articles that arrive while
+you're reading pulse briefly as the unread counts count up. Set
+`animations = false` in the config to turn both off.
+
 ## Command line
 
 ```sh

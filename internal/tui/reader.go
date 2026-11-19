@@ -31,6 +31,7 @@ func (m *Model) ensureReader() {
 		return
 	}
 	sameItem := strings.HasPrefix(m.readerKey, fmt.Sprintf("%d:", m.open.ID))
+	m.stopScroll() // the content is changing under it
 	y := m.reader.YOffset()
 	content, links := m.article(*m.open, l.readerW, l.bodyH)
 	m.reader.SetContent(content)

@@ -22,6 +22,7 @@ type Options struct {
 	RefreshInterval time.Duration
 	FullText        Extractor // optional; enables e / E
 	NoImages        bool      // don't draw inline images even if the terminal can
+	NoAnimations    bool      // no smooth scrolling or arrival highlights
 }
 
 // Extractor fetches an article's page and returns its main content as HTML.
@@ -108,9 +109,16 @@ type Model struct {
 
 	extractor Extractor
 	gfx       gfxState
-	fullMode  map[int64]bool // per-article e overrides for this session
-	fetching  map[int64]bool // full-text extractions in flight
-	ticking   bool           // spinner tick loop running
+
+	animate     bool
+	animTicking bool
+	scroll      scrollAnim
+	fresh       map[int64]time.Time // items that just arrived → when
+	tweens      map[string]tween    // unread counts counting up
+	syncMaxID   int64               // highest item id when the sync started
+	fullMode    map[int64]bool      // per-article e overrides for this session
+	fetching    map[int64]bool      // full-text extractions in flight
+	ticking     bool                // spinner tick loop running
 
 	open      *store.Item // the item in the reader
 	reader    viewport.Model
@@ -166,6 +174,9 @@ func New(ctx context.Context, opts Options) *Model {
 		unreadOnly:   true,
 		extractor:    opts.FullText,
 		gfx:          newGfx(opts.NoImages),
+		animate:      !opts.NoAnimations,
+		fresh:        map[int64]time.Time{},
+		tweens:       map[string]tween{},
 		fullMode:     map[int64]bool{},
 		fetching:     map[int64]bool{},
 		showSidebar:  true,
@@ -422,6 +433,7 @@ func (m *Model) openAt(i int) {
 	it := m.items[i]
 	m.open = &it
 	m.readerKey = ""
+	m.scroll = scrollAnim{}
 	m.reader.GotoTop()
 	m.setRead(i, true)
 	if m.wantFull(it) {

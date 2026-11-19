@@ -42,6 +42,7 @@ func (m *Model) startSync() tea.Cmd {
 	}
 	m.syncing = true
 	m.syncProg = backend.Progress{}
+	m.syncMaxID, _ = m.store.MaxItemID(m.ctx)
 	ch := make(chan tea.Msg, 32)
 	m.syncCh = ch
 	backends, ctx := m.backends, m.ctx
@@ -113,9 +114,13 @@ func (m *Model) finishSync(msg syncDoneMsg) {
 	m.syncing = false
 	m.syncCh = nil
 	m.lastSync = m.now()
+	before := m.countSnapshot()
 	m.reloadAccounts()
 	m.reloadSidebar()
 	m.loadItems(0, true)
+	if msg.res.NewItems > 0 {
+		m.highlightArrivals(m.syncMaxID, before)
+	}
 	var failures []error
 	for id, err := range msg.errs {
 		if err == nil {

@@ -41,6 +41,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.fail(msg.err)
 	case fullTextMsg:
 		m.gotFullText(msg)
+	case animMsg:
+		m.animStep()
 	case imageLoadedMsg:
 		m.imageLoaded(msg)
 	case imagePassMsg:
@@ -136,26 +138,28 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (quit bool) {
 		switch {
 		case m.open == nil:
 			m.openAt(m.cursor)
-		case !m.reader.AtBottom():
-			m.reader.PageDown()
+		case !m.atBottom():
+			m.scrollBy(m.reader.Height())
 		default:
 			m.step(1)
 		}
 	case "shift+space", "b":
 		switch {
 		case m.open == nil:
-		case !m.reader.AtTop():
-			m.reader.PageUp()
+		case !m.atTop():
+			m.scrollBy(-m.reader.Height())
 		default:
 			m.step(-1)
 		}
 	case "ctrl+d", "pgdown":
-		m.reader.HalfPageDown()
+		m.scrollBy(max(m.reader.Height()/2, 1))
 	case "ctrl+u", "pgup":
-		m.reader.HalfPageUp()
+		m.scrollBy(-max(m.reader.Height()/2, 1))
 	case "ctrl+e":
+		m.stopScroll()
 		m.reader.ScrollDown(1)
 	case "ctrl+y":
+		m.stopScroll()
 		m.reader.ScrollUp(1)
 	case "G", "end":
 		m.cursor = len(m.items) - 1

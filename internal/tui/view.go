@@ -180,7 +180,7 @@ func (m *Model) viewHeader(w int) string {
 	case m.view.kind == sideStarred:
 		right = fmt.Sprintf("%d starred", len(m.items))
 	case m.unreadOnly:
-		right = fmt.Sprintf("%d unread", m.view.unread)
+		right = fmt.Sprintf("%d unread", m.count("s:"+m.view.key(), m.view.unread))
 	default:
 		right = fmt.Sprintf("all · %d articles", len(m.items))
 	}
@@ -250,7 +250,7 @@ func (m *Model) viewSidebar(w, h int) []string {
 			mark, name = m.st.acctMark.Render("◆"), m.st.acctActive.Render(a.Name)
 		}
 		count := ""
-		if n := m.unreadByAcct[a.ID]; n > 0 {
+		if n := m.count("a:"+a.ID, m.unreadByAcct[a.ID]); n > 0 {
 			count = m.st.sideCount.Render(fmt.Sprint(n))
 		}
 		if m.acctErr[a.ID] != "" {
@@ -317,8 +317,8 @@ func (m *Model) sideRow(e sideEntry, selected bool, w int) string {
 	}
 	indent := strings.Repeat("  ", e.depth)
 	count := ""
-	if e.unread > 0 {
-		count = m.st.sideCount.Render(fmt.Sprint(e.unread))
+	if n := m.count("s:"+e.key(), e.unread); n > 0 {
+		count = m.st.sideCount.Render(fmt.Sprint(n))
 	}
 	left := bar + indent + icon + " " + title
 	cw := ansi.StringWidth(count)
@@ -416,9 +416,12 @@ func (m *Model) itemRows(it store.Item, cur, multiFeed bool, w int, now time.Tim
 		bar = m.st.bar.Render("▌")
 	}
 	mark := " "
+	glyph, pulsing := m.pulse(it.ID)
 	switch {
 	case it.Starred:
 		mark = m.st.star.Render("★")
+	case pulsing && !it.Read:
+		mark = m.st.fresh.Render(glyph)
 	case !it.Read:
 		mark = m.st.dot.Render("●")
 	}
@@ -432,6 +435,8 @@ func (m *Model) itemRows(it store.Item, cur, multiFeed bool, w int, now time.Tim
 	switch {
 	case cur:
 		title = m.st.titleCur.Render(title)
+	case pulsing && !it.Read:
+		title = m.st.freshTitle.Render(title)
 	case it.Read:
 		title = m.st.titleRead.Render(title)
 	default:

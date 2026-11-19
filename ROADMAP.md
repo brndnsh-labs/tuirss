@@ -18,6 +18,7 @@
   - [x] full-text extraction for summary-only feeds (`e` / `E`)
   - [x] inline sixel images in the reader (pulled forward from post-v1)
   - [x] tested against a live FreshRSS server
+  - [x] smooth scrolling and new-article highlights (`animations = false` to disable)
   - [ ] unread sparklines
 
 ## After v1

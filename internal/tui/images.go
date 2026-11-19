@@ -168,7 +168,8 @@ func (m *Model) imageLoaded(msg imageLoadedMsg) {
 
 // desiredImages is what should be on screen right now.
 func (m *Model) desiredImages() []drawJob {
-	if !m.gfx.enabled() || m.open == nil || m.overlay != overlayNone || len(m.gfx.place) == 0 {
+	// Images hide while the reader glides and come back when it stops.
+	if !m.gfx.enabled() || m.open == nil || m.overlay != overlayNone || len(m.gfx.place) == 0 || m.scroll.active {
 		return nil
 	}
 	l := m.layout()
@@ -210,7 +211,11 @@ func (m *Model) scheduleImages() {
 	m.gfx.sig = sig
 	m.gfx.seq++
 	seq := m.gfx.seq
-	m.do(tea.Tick(imagePassDelay, func(time.Time) tea.Msg { return imagePassMsg{seq} }))
+	delay := imagePassDelay
+	if len(m.desiredImages()) == 0 {
+		delay = time.Millisecond // only erasing: do it before anything moves far
+	}
+	m.do(tea.Tick(delay, func(time.Time) tea.Msg { return imagePassMsg{seq} }))
 }
 
 func (m *Model) imagePass(msg imagePassMsg) {

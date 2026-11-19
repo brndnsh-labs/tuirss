@@ -323,6 +323,32 @@ func (s *Store) SetFullContent(ctx context.Context, id int64, html string, fetch
 	return tx.Commit()
 }
 
+// MaxItemID is the highest item id, or 0 if there are none. Ids only grow,
+// so items added later have larger ones.
+func (s *Store) MaxItemID(ctx context.Context) (int64, error) {
+	var id int64
+	err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(id), 0) FROM items`).Scan(&id)
+	return id, err
+}
+
+// ItemIDsAbove returns up to limit item ids greater than id.
+func (s *Store) ItemIDsAbove(ctx context.Context, id int64, limit int) ([]int64, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM items WHERE id > ? ORDER BY id LIMIT ?`, id, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var v int64
+		if err := rows.Scan(&v); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
 // CountItems counts items matching q, ignoring Limit and Offset.
 func (s *Store) CountItems(ctx context.Context, q ItemQuery) (int, error) {
 	where, args := q.where()
