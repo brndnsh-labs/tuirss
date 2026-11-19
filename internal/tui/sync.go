@@ -70,7 +70,16 @@ func (m *Model) startSync() tea.Cmd {
 		}
 		ch <- syncDoneMsg{res: total, errs: errs}
 	}()
-	return tea.Batch(m.waitSync(), spinTick())
+	m.startTicking()
+	return m.waitSync()
+}
+
+// startTicking runs the spinner while anything is in progress.
+func (m *Model) startTicking() {
+	if !m.ticking {
+		m.ticking = true
+		m.do(spinTick())
+	}
 }
 
 func (m *Model) waitSync() tea.Cmd {

@@ -82,3 +82,65 @@ func TestReadingMinutes(t *testing.T) {
 		t.Error("unexpected reading time")
 	}
 }
+
+func TestImagePlacements(t *testing.T) {
+	src := `<p>Before</p><p><a href="/big"><img src="/comic.png" alt="Comic"></a></p>` +
+		`<img src="/pixel.gif"><p>Middle <img src="/loading.jpg" alt="Soon"> text</p><p>After</p>`
+	fn := func(src, alt string) int {
+		switch {
+		case strings.HasSuffix(src, "comic.png"):
+			return 4
+		case strings.HasSuffix(src, "pixel.gif"):
+			return -1
+		}
+		return 0
+	}
+	res := Render(src, 40, "https://x.example/post", Styles{}, fn)
+	lines := strings.Split(ansi.Strip(res.Body), "\n")
+	if len(res.Images) != 1 {
+		t.Fatalf("placements = %+v", res.Images)
+	}
+	p := res.Images[0]
+	if p.Src != "https://x.example/comic.png" || p.Rows != 4 || p.Alt != "Comic" {
+		t.Errorf("placement = %+v", p)
+	}
+	for i := p.Line; i < p.Line+p.Rows; i++ {
+		if strings.TrimSpace(lines[i]) != "" {
+			t.Errorf("reserved line %d not blank: %q", i, lines[i])
+		}
+	}
+	if lines[0] != "Before" || strings.TrimSpace(lines[p.Line-1]) != "" || strings.TrimSpace(lines[p.Line+p.Rows]) != "" {
+		t.Errorf("image should sit between blank lines:\n%s", strings.Join(lines, "|\n"))
+	}
+	out := ansi.Strip(res.Body)
+	if strings.Contains(out, "pixel") || !strings.Contains(out, "▣ Soon") {
+		t.Errorf("hidden/placeholder images wrong:\n%s", out)
+	}
+	if !strings.Contains(out, "[1]") {
+		t.Errorf("the link around the image should still be numbered:\n%s", out)
+	}
+}
+
+func TestImageTitleCaption(t *testing.T) {
+	xkcd := `<img src="https://imgs.xkcd.com/comics/voyager.png" title="The probe is fine; it's the rest of us." alt="Voyager Crash" />`
+	out, _ := plain(t, xkcd, 60)
+	if !strings.Contains(out, "▣ Voyager Crash") || !strings.Contains(out, "The probe is fine; it's the rest of us.") {
+		t.Errorf("placeholder + caption expected:\n%s", out)
+	}
+	res := Render(xkcd, 60, "", Styles{}, func(string, string) int { return 3 })
+	lines := strings.Split(ansi.Strip(res.Body), "\n")
+	if len(res.Images) != 1 || !strings.Contains(lines[res.Images[0].Line+4], "The probe is fine") {
+		t.Errorf("caption should follow the image after a blank line:\n%q", lines)
+	}
+}
+
+func TestDrawnImageCaptionsEvenWhenTitleIsAlt(t *testing.T) {
+	src := `<img src="/c.png" title="Same joke" alt="Same joke">`
+	if out, _ := plain(t, src, 60); strings.Count(out, "Same joke") != 1 {
+		t.Errorf("placeholder shouldn't repeat itself:\n%s", out)
+	}
+	res := Render(src, 60, "", Styles{}, func(string, string) int { return 2 })
+	if !strings.Contains(ansi.Strip(res.Body), "Same joke") {
+		t.Error("a drawn image hides its alt text, so the title should be the caption")
+	}
+}

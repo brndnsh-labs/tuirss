@@ -39,6 +39,8 @@ var helpSections = []struct {
 		{"s", "star"},
 		{"m", "toggle read"},
 		{"A", "mark all here as read"},
+		{"e", "full article ⇄ feed text"},
+		{"E", "always full text for feed"},
 		{"v", "open in browser"},
 		{"y", "copy link"},
 		{"t", "unread only ⇄ all"},

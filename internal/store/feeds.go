@@ -19,6 +19,7 @@ type Feed struct {
 	LastFetchedAt time.Time
 	LastError     string
 	UnreadCount   int
+	FullText      bool // show extracted full text by default
 }
 
 // DisplayTitle is the feed's title, falling back to its URL.
@@ -32,7 +33,7 @@ func (f Feed) DisplayTitle() string {
 const feedSelect = `
 	SELECT f.id, f.account_id, COALESCE(f.folder_id, 0), COALESCE(fo.name, ''), f.remote_id,
 	       f.url, f.site_url, f.title, f.etag, f.last_modified, f.last_fetched_at, f.last_error,
-	       (SELECT COUNT(*) FROM items i WHERE i.feed_id = f.id AND i.is_read = 0)
+	       (SELECT COUNT(*) FROM items i WHERE i.feed_id = f.id AND i.is_read = 0), f.full_text
 	FROM feeds f LEFT JOIN folders fo ON fo.id = f.folder_id`
 
 func scanFeed(sc scanner) (Feed, error) {
@@ -40,7 +41,7 @@ func scanFeed(sc scanner) (Feed, error) {
 	var fetched int64
 	err := sc.Scan(&f.ID, &f.AccountID, &f.FolderID, &f.FolderName, &f.RemoteID,
 		&f.URL, &f.SiteURL, &f.Title, &f.ETag, &f.LastModified, &fetched, &f.LastError,
-		&f.UnreadCount)
+		&f.UnreadCount, &f.FullText)
 	f.LastFetchedAt = fromUnix(fetched)
 	return f, err
 }
@@ -95,6 +96,18 @@ func (s *Store) FeedByURL(ctx context.Context, accountID, url string) (Feed, err
 // DeleteFeed removes a feed and all of its items.
 func (s *Store) DeleteFeed(ctx context.Context, id int64) error {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM feeds WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// SetFeedFullText sets whether a feed shows extracted full text by default.
+func (s *Store) SetFeedFullText(ctx context.Context, feedID int64, on bool) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE feeds SET full_text = ? WHERE id = ?`, boolInt(on), feedID)
 	if err != nil {
 		return err
 	}

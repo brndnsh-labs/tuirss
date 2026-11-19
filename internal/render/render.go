@@ -26,14 +26,31 @@ type Styles struct {
 }
 
 type Result struct {
-	Body  string
-	Links []string // numbered from 1, in reading order
+	Body   string
+	Links  []string    // numbered from 1, in reading order
+	Images []Placement // space reserved for images, in Body line numbers
+}
+
+// ImageFunc decides how an image appears: return n > 0 to reserve n blank
+// lines for it to be drawn into, 0 for a text placeholder, or < 0 to leave it
+// out entirely (tracking pixels, icons).
+type ImageFunc func(src, alt string) int
+
+// Placement is where an image goes: Rows blank lines starting at Line.
+type Placement struct {
+	Line, Rows int
+	Src, Alt   string
 }
 
 // HTML renders src (an HTML fragment or plain text) at the given width.
 // base resolves relative links and may be empty.
 func HTML(src string, width int, base string, st Styles) Result {
-	r := &renderer{st: st, width: max(width, 10), linkIndex: map[string]int{}}
+	return Render(src, width, base, st, nil)
+}
+
+// Render is HTML with control over images; images may be nil.
+func Render(src string, width int, base string, st Styles, images ImageFunc) Result {
+	r := &renderer{st: st, width: max(width, 10), linkIndex: map[string]int{}, images: images}
 	r.base, _ = url.Parse(base)
 	if !strings.ContainsRune(src, '<') {
 		// Plain text: keep paragraph breaks, which HTML parsing would collapse.
@@ -50,7 +67,7 @@ func HTML(src string, width int, base string, st Styles) Result {
 	}
 	r.walk(doc)
 	r.flush()
-	return Result{Body: r.out.String(), Links: r.links}
+	return Result{Body: r.out.String(), Links: r.links, Images: r.placed}
 }
 
 type prefix struct {
@@ -72,6 +89,9 @@ type renderer struct {
 	links     []string
 	linkIndex map[string]int
 	lists     []listState
+	images    ImageFunc
+	placed    []Placement
+	lines     int // lines written to out
 }
 
 type listState struct {
@@ -166,12 +186,37 @@ func (r *renderer) element(n *html.Node) bool {
 		r.spaced = false
 	case atom.Img:
 		alt := strings.TrimSpace(attr(n, "alt"))
+		// The title (xkcd's hover text) becomes a caption under drawn images,
+		// and under placeholders when it says more than the alt text does.
+		title := strings.TrimSpace(attr(n, "title"))
+		if src := r.resolve(attr(n, "src")); src != "" && r.images != nil {
+			switch rows := r.images(src, alt); {
+			case rows < 0:
+				return true
+			case rows > 0:
+				r.flush()
+				r.gap = true
+				r.emit() // settle any owed gap first
+				r.placed = append(r.placed, Placement{Line: r.lines, Rows: rows, Src: src, Alt: alt})
+				for range rows {
+					r.out.WriteString("\n")
+					r.lines++
+				}
+				r.gap = true
+				r.caption(title)
+				return true
+			}
+		}
 		if alt == "" {
 			alt = "image"
 		}
 		r.space()
 		r.inline.WriteString(r.st.Muted.Render("▣ " + alt))
 		r.spaced = false
+		if title != "" && title != alt {
+			r.flush()
+			r.caption(title)
+		}
 	case atom.Video, atom.Audio, atom.Iframe:
 		src := r.resolve(attr(n, "src"))
 		label := map[atom.Atom]string{atom.Video: "▶ video", atom.Audio: "♪ audio", atom.Iframe: "▣ embedded content"}[n.DataAtom]
@@ -280,6 +325,19 @@ func (r *renderer) element(n *html.Node) bool {
 	return true
 }
 
+// caption renders an image's title text as its own muted, italic block.
+func (r *renderer) caption(text string) {
+	if text == "" {
+		return
+	}
+	saved := r.style
+	r.style = r.st.Muted.Italic(true)
+	r.text(text)
+	r.flush()
+	r.style = saved
+	r.gap = true
+}
+
 // block renders fn's output as its own paragraph, with blank lines around it.
 func (r *renderer) block(fn func()) {
 	r.flush()
@@ -362,6 +420,7 @@ func (r *renderer) flush() {
 func (r *renderer) emit(lines ...string) {
 	if r.gap && r.out.Len() > 0 {
 		r.out.WriteString("\n")
+		r.lines++
 	}
 	r.gap = false
 	for _, line := range lines {
@@ -379,6 +438,7 @@ func (r *renderer) emit(lines ...string) {
 		r.out.WriteString(p.String())
 		r.out.WriteString(line)
 		r.out.WriteString("\n")
+		r.lines++
 	}
 }
 

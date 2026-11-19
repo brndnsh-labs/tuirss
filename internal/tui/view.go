@@ -204,7 +204,7 @@ func (m *Model) viewStatus(w int) string {
 		}
 		left = " " + st.Render(m.status)
 	case m.open != nil:
-		left = " " + m.hints([][2]string{{"j/k", "next/prev"}, {"space", "page"}, {"s", "star"}, {"v", "browser"}, {"f", "focus"}, {"?", "help"}})
+		left = " " + m.hints([][2]string{{"j/k", "next/prev"}, {"space", "page"}, {"s", "star"}, {"e", "full text"}, {"v", "browser"}, {"?", "help"}})
 	default:
 		left = " " + m.hints([][2]string{{"j/k", "read"}, {"J/K", "feeds"}, {"g u", "jump"}, {"/", "search"}, {"r", "refresh"}, {"?", "help"}})
 	}
@@ -216,6 +216,8 @@ func (m *Model) viewStatus(w int) string {
 		if m.syncProg.Total > 0 {
 			right += m.st.status.Render(fmt.Sprintf(" %d/%d", m.syncProg.Done, m.syncProg.Total))
 		}
+	case len(m.fetching) > 0:
+		right = m.st.spinner.Render(spinner[m.spin%len(spinner)]) + m.st.status.Render(" fetching article")
 	case !m.lastSync.IsZero():
 		right = m.st.status.Render("synced " + format.Ago(m.lastSync, m.now()))
 		if !strings.HasPrefix(format.Ago(m.lastSync, m.now()), "just") {

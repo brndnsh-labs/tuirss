@@ -25,13 +25,14 @@ func (m *Model) ensureReader() {
 	}
 	m.reader.SetWidth(l.readerW)
 	m.reader.SetHeight(l.bodyH)
-	key := fmt.Sprintf("%d:%d:%v", m.open.ID, l.readerW, m.open.Starred)
+	key := fmt.Sprintf("%d:%d:%v:%v:%v:%d:%s", m.open.ID, l.readerW, m.open.Starred,
+		m.wantFull(*m.open), m.fetching[m.open.ID], len(m.open.FullContent), m.open.FullError)
 	if key == m.readerKey {
 		return
 	}
 	sameItem := strings.HasPrefix(m.readerKey, fmt.Sprintf("%d:", m.open.ID))
 	y := m.reader.YOffset()
-	content, links := m.article(*m.open, l.readerW)
+	content, links := m.article(*m.open, l.readerW, l.bodyH)
 	m.reader.SetContent(content)
 	m.links = links
 	m.readerKey = key
@@ -42,8 +43,9 @@ func (m *Model) ensureReader() {
 	}
 }
 
-func (m *Model) article(it store.Item, w int) (string, []string) {
+func (m *Model) article(it store.Item, w, bodyH int) (string, []string) {
 	measure := min(max(w-2*readerPad, 20), maxMeasure)
+	m.gfx.place = m.gfx.place[:0]
 	var b strings.Builder
 
 	title := strings.Join(strings.Fields(it.Title), " ")
@@ -55,8 +57,25 @@ func (m *Model) article(it store.Item, w int) (string, []string) {
 	b.WriteString("\n\n")
 
 	body := it.Content
-	if strings.TrimSpace(htmltext.PlainText(body)) == "" {
+	if !hasContent(body) {
 		body = it.Summary
+	}
+	full := m.wantFull(it)
+	var banner string
+	switch {
+	case m.extractor == nil || it.URL == "":
+	case full && it.FullContent != "":
+		body = it.FullContent
+		banner = m.st.key.Render("◆") + m.st.muted.Render(" full article from "+hostOf(it.URL)+" · ") +
+			m.st.key.Render("e") + m.st.muted.Render(" feed version")
+	case full && m.fetching[it.ID]:
+		banner = m.st.spinner.Render("◌") + m.st.muted.Render(" fetching the full article…")
+	case full && it.FullError != "":
+		banner = m.st.errMsg.Render("✗ couldn't get the full article: "+it.FullError) +
+			m.st.muted.Render(" · showing the feed's text")
+	case !full && looksLikeSummary(body):
+		banner = m.st.muted.Render("looks like a summary · ") + m.st.key.Render("e") +
+			m.st.muted.Render(" full article · ") + m.st.key.Render("E") + m.st.muted.Render(" always for this feed")
 	}
 	meta := []string{it.FeedTitle}
 	if it.Author != "" {
@@ -77,14 +96,20 @@ func (m *Model) article(it store.Item, w int) (string, []string) {
 		b.WriteString("\n")
 	}
 	b.WriteString(m.st.rRule.Render(strings.Repeat("─", measure)))
-	b.WriteString("\n\n")
+	b.WriteString("\n")
+	if banner != "" {
+		b.WriteString(lipgloss.Wrap(banner, measure, " "))
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
 
 	var links []string
-	if strings.TrimSpace(htmltext.PlainText(body)) == "" {
+	if !hasContent(body) {
 		b.WriteString(m.st.muted.Render("This feed didn't include the article text.\nPress v to open it in your browser."))
 		b.WriteString("\n")
 	} else {
-		res := render.HTML(body, measure, it.URL, m.st.render)
+		res := render.Render(body, measure, it.URL, m.st.render, m.imageFunc(measure, bodyH, it.URL))
+		m.placeImages(res, strings.Count(b.String(), "\n"), measure, bodyH)
 		b.WriteString(res.Body)
 		links = res.Links
 	}
@@ -111,6 +136,19 @@ func (m *Model) article(it store.Item, w int) (string, []string) {
 		}
 	}
 	return strings.Join(lines, "\n"), links
+}
+
+// hasContent reports whether HTML has anything to show: text or an image
+// (comics are often a lone <img>).
+func hasContent(html string) bool {
+	return strings.TrimSpace(htmltext.PlainText(html)) != "" || strings.Contains(strings.ToLower(html), "<img")
+}
+
+func hostOf(raw string) string {
+	if u, err := url.Parse(raw); err == nil && u.Host != "" {
+		return strings.TrimPrefix(u.Host, "www.")
+	}
+	return "the web"
 }
 
 // shortURL drops the scheme and trims to n cells.

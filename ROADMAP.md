@@ -12,15 +12,19 @@
 - [x] **M3 — FreshRSS:** Google Reader API (`/api/greader.php`), `tuirss login`
       with keyring / `password_command`, incremental sync, outbox for offline
       actions with retry — *needs a live test against rss.brndn.zip*
-- [ ] **M4 — Polish:** live Omarchy theme colors, unread sparklines, sync
-      spinner, reading-time estimates, full-text extraction (readability) for
-      summary-only feeds, test against the real server
+- [ ] **M4 — Polish:**
+  - [x] theme follows the terminal's palette (so Omarchy themes apply)
+  - [x] sync spinner, reading-time estimates
+  - [x] full-text extraction for summary-only feeds (`e` / `E`)
+  - [x] inline sixel images in the reader (pulled forward from post-v1)
+  - [x] live test against rss.brndn.zip
+  - [ ] unread sparklines
 
 ## After v1
 
 - Manage subscriptions and folders from inside the TUI
 - `:` command palette (`:subscribe`, `:import`, `:unsubscribe`, …)
-- Inline images via sixel (foot supports sixel, not the Kitty protocol)
+- Full-screen image viewer (zoom into a comic); Kitty graphics protocol
 - Pipe an article to a command (`|` → `$PAGER`, summarizer, notes script)
 - Follow permanent redirects (301/308) by updating the stored feed URL
 - Item retention / pruning of old read items

@@ -14,6 +14,7 @@ import (
 
 	"tuirss/internal/backend"
 	"tuirss/internal/format"
+	"tuirss/internal/fulltext"
 	"tuirss/internal/local"
 	"tuirss/internal/opml"
 	"tuirss/internal/store"
@@ -44,7 +45,13 @@ func cmdTUI(ctx context.Context, a *app, args []string) error {
 	if len(a.backends) == 0 {
 		return errors.New("no accounts enabled: add a [[freshrss]] account or set local.enabled = true in the config")
 	}
-	return tui.Run(ctx, tui.Options{Store: a.store, Backends: a.backends, RefreshInterval: a.cfg.RefreshInterval.Duration})
+	return tui.Run(ctx, tui.Options{
+		Store:           a.store,
+		Backends:        a.backends,
+		RefreshInterval: a.cfg.RefreshInterval.Duration,
+		FullText:        fulltext.New(),
+		NoImages:        os.Getenv("TUIRSS_IMAGES") == "0",
+	})
 }
 
 func cmdAdd(ctx context.Context, a *app, args []string) error {

@@ -33,6 +33,14 @@ Google Reader style: `j`/`k` next/previous article, `space` page/next,
 `s` star, `m` toggle read, `v` open in browser, `J`/`K` next/previous feed,
 `g u` jump to a feed, `[`/`]` switch account, `/` search, `?` all keys.
 
+**Full articles:** for feeds that only send a teaser, `e` fetches the article
+from the web page and shows it in the reader (cached after the first fetch);
+`E` makes a feed always do this.
+
+**Images** are drawn inline in terminals with sixel graphics (foot, WezTerm,
+recent xterm, …), detected automatically. Elsewhere — including inside tmux —
+they show as `▣` placeholders. Set `TUIRSS_IMAGES=0` to turn them off.
+
 ## Command line
 
 ```sh

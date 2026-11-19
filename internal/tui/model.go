@@ -20,6 +20,13 @@ type Options struct {
 	Store           *store.Store
 	Backends        []backend.Backend
 	RefreshInterval time.Duration
+	FullText        Extractor // optional; enables e / E
+	NoImages        bool      // don't draw inline images even if the terminal can
+}
+
+// Extractor fetches an article's page and returns its main content as HTML.
+type Extractor interface {
+	Extract(ctx context.Context, pageURL string) (string, error)
 }
 
 // Run starts the TUI and blocks until it exits.
@@ -99,6 +106,12 @@ type Model struct {
 	listOffset int
 	excerpts   map[int64]string
 
+	extractor Extractor
+	gfx       gfxState
+	fullMode  map[int64]bool // per-article e overrides for this session
+	fetching  map[int64]bool // full-text extractions in flight
+	ticking   bool           // spinner tick loop running
+
 	open      *store.Item // the item in the reader
 	reader    viewport.Model
 	readerKey string
@@ -151,6 +164,10 @@ func New(ctx context.Context, opts Options) *Model {
 		unreadByAcct: map[string]int{},
 		acctErr:      map[string]string{},
 		unreadOnly:   true,
+		extractor:    opts.FullText,
+		gfx:          newGfx(opts.NoImages),
+		fullMode:     map[int64]bool{},
+		fetching:     map[int64]bool{},
 		showSidebar:  true,
 		reader:       viewport.New(),
 		search:       ti,
@@ -163,6 +180,7 @@ func (m *Model) Init() tea.Cmd {
 	m.enterAccount(0)
 	m.do(m.scheduleRefresh())
 	m.do(m.startSync())
+	m.queryTerminal()
 	cmds := m.cmds
 	m.cmds = nil
 	return tea.Batch(cmds...)
@@ -406,6 +424,10 @@ func (m *Model) openAt(i int) {
 	m.readerKey = ""
 	m.reader.GotoTop()
 	m.setRead(i, true)
+	if m.wantFull(it) {
+		m.fetchFull(it, false)
+		m.readAhead(i)
+	}
 }
 
 func (m *Model) closeReader() {

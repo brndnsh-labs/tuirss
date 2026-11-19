@@ -320,3 +320,44 @@ func TestOutboxForSyncedAccounts(t *testing.T) {
 		t.Errorf("empty folder should be removed: %+v", f)
 	}
 }
+
+func TestFullContent(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	f := seed(t, s)
+	s.UpsertItems(ctx, f.ID, []Item{{GUID: "a", Title: "Teaser", Summary: "short"}})
+	items, _ := s.Items(ctx, ItemQuery{})
+	id := items[0].ID
+
+	if err := s.SetFullContent(ctx, id, "", errors.New("403")); err != nil {
+		t.Fatal(err)
+	}
+	if it, _ := s.Item(ctx, id); it.FullError != "403" || it.FullContent != "" {
+		t.Errorf("after failure: %+v", it)
+	}
+	if err := s.SetFullContent(ctx, id, "<p>The whole story about pangolins</p>", nil); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := s.CountItems(ctx, ItemQuery{Search: "pangolins"}); n != 1 {
+		t.Error("full text should be searchable")
+	}
+	// A later feed refresh keeps the full text, and search still finds it.
+	s.UpsertItems(ctx, f.ID, []Item{{GUID: "a", Title: "Teaser", Summary: "short v2"}})
+	it, _ := s.Item(ctx, id)
+	if it.FullContent == "" || it.FullError != "" {
+		t.Errorf("refresh lost full text: %+v", it)
+	}
+	if n, _ := s.CountItems(ctx, ItemQuery{Search: "pangolins"}); n != 1 {
+		t.Error("refresh dropped full text from the index")
+	}
+
+	if err := s.SetFeedFullText(ctx, f.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if it, _ := s.Item(ctx, id); !it.FeedFullText {
+		t.Error("item should report the feed's full-text preference")
+	}
+	if feeds, _ := s.Feeds(ctx, "local"); !feeds[0].FullText {
+		t.Error("feed should report full text on")
+	}
+}

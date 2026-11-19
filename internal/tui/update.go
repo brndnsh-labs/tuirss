@@ -11,6 +11,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.cmds = m.cmds[:0]
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		if m.width != 0 && (msg.Width != m.width || msg.Height != m.height) {
+			m.queryTerminal() // the font size may have changed too
+		}
 		m.width, m.height = msg.Width, msg.Height
 	case tea.KeyPressMsg:
 		if quit := m.handleKey(msg); quit {
@@ -29,13 +32,25 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case syncDoneMsg:
 		m.finishSync(msg)
 	case spinMsg:
-		if m.syncing {
+		m.ticking = false
+		if m.syncing || len(m.fetching) > 0 {
 			m.spin++
-			m.do(spinTick())
+			m.startTicking()
 		}
 	case browserMsg:
 		m.fail(msg.err)
+	case fullTextMsg:
+		m.gotFullText(msg)
+	case imageLoadedMsg:
+		m.imageLoaded(msg)
+	case imagePassMsg:
+		m.imagePass(msg)
+	case imageDrawMsg:
+		m.imageDraw(msg)
 	default:
+		if m.terminalReply(msg) {
+			break
+		}
 		if m.searching {
 			var cmd tea.Cmd
 			m.search, cmd = m.search.Update(msg)
@@ -53,8 +68,10 @@ func (m *Model) settle() {
 	m.sideCursor = clamp(m.sideCursor, 0, max(len(m.side)-1, 0))
 	if m.open == nil {
 		m.fullscreen = false
+		m.gfx.place = m.gfx.place[:0]
 	}
 	m.ensureReader()
+	m.scheduleImages()
 }
 
 func (m *Model) handleKey(msg tea.KeyPressMsg) (quit bool) {
@@ -158,6 +175,10 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (quit bool) {
 		m.openInBrowser()
 	case "y":
 		m.yank()
+	case "e":
+		m.toggleFull()
+	case "E":
+		m.toggleFeedFull()
 	case "t":
 		m.unreadOnly = !m.unreadOnly
 		m.loadItems(0, true)

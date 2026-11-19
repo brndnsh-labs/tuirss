@@ -24,6 +24,11 @@ type Item struct {
 	Read        bool
 	Starred     bool
 	FeedTitle   string // filled in by queries
+	// FullContent is the article text extracted from the web page, if
+	// fetched; FullError is why extraction failed, if it did.
+	FullContent  string
+	FullError    string
+	FeedFullText bool // the feed prefers full text
 }
 
 // UpsertItems inserts new items and refreshes the text of existing ones, matched
@@ -54,7 +59,7 @@ func (s *Store) UpsertItems(ctx context.Context, feedID int64, items []Item) (in
 			content      = excluded.content,
 			published_at = CASE WHEN excluded.published_at > 0 THEN excluded.published_at ELSE items.published_at END,
 			updated_at   = excluded.updated_at
-		RETURNING id`)
+		RETURNING id, full_content`)
 	if err != nil {
 		return 0, err
 	}
@@ -77,12 +82,17 @@ func (s *Store) UpsertItems(ctx context.Context, feedID int64, items []Item) (in
 			published = now // undated items sort as "first seen"
 		}
 		var id int64
+		var full string
 		if err := upsert.QueryRowContext(ctx, feedID, it.GUID, it.RemoteID, it.URL, it.Title, it.Author,
 			it.Summary, it.Content, toUnix(published), toUnix(it.UpdatedAt), now.Unix(),
-			boolInt(it.Read), boolInt(it.Starred)).Scan(&id); err != nil {
+			boolInt(it.Read), boolInt(it.Starred)).Scan(&id, &full); err != nil {
 			return 0, err
 		}
-		if err := indexItem(ctx, tx, id, it.Title, it.Author, it.Summary, it.Content); err != nil {
+		body := it.Content
+		if full != "" {
+			body = full
+		}
+		if err := indexItem(ctx, tx, id, it.Title, it.Author, it.Summary, body); err != nil {
 			return 0, err
 		}
 		if isNew {
@@ -163,14 +173,16 @@ func (q ItemQuery) where() (string, []any) {
 const itemSelect = `
 	SELECT i.id, i.feed_id, i.guid, i.remote_id, i.url, i.title, i.author, i.summary, i.content,
 	       i.published_at, i.updated_at, i.fetched_at, i.is_read, i.is_starred,
-	       CASE WHEN f.title = '' THEN f.url ELSE f.title END
+	       CASE WHEN f.title = '' THEN f.url ELSE f.title END,
+	       i.full_content, i.full_error, f.full_text
 	FROM items i JOIN feeds f ON f.id = i.feed_id`
 
 func scanItem(sc scanner) (Item, error) {
 	var it Item
 	var pub, upd, fetched int64
 	err := sc.Scan(&it.ID, &it.FeedID, &it.GUID, &it.RemoteID, &it.URL, &it.Title, &it.Author,
-		&it.Summary, &it.Content, &pub, &upd, &fetched, &it.Read, &it.Starred, &it.FeedTitle)
+		&it.Summary, &it.Content, &pub, &upd, &fetched, &it.Read, &it.Starred, &it.FeedTitle,
+		&it.FullContent, &it.FullError, &it.FeedFullText)
 	it.PublishedAt, it.UpdatedAt, it.FetchedAt = fromUnix(pub), fromUnix(upd), fromUnix(fetched)
 	return it, err
 }
@@ -278,6 +290,37 @@ func (s *Store) MarkAllRead(ctx context.Context, q ItemQuery) (int64, error) {
 		return 0, err
 	}
 	return int64(len(ids)), tx.Commit()
+}
+
+// SetFullContent stores extracted article text (or why extraction failed)
+// and re-indexes the item for search.
+func (s *Store) SetFullContent(ctx context.Context, id int64, html string, fetchErr error) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	errText := ""
+	if fetchErr != nil {
+		errText = fetchErr.Error()
+	}
+	res, err := tx.ExecContext(ctx, `UPDATE items SET full_content = CASE WHEN ?1 = '' THEN full_content ELSE ?1 END, full_error = ?2 WHERE id = ?3`, html, errText, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	if html != "" {
+		var title, author, summary string
+		if err := tx.QueryRowContext(ctx, `SELECT title, author, summary FROM items WHERE id = ?`, id).Scan(&title, &author, &summary); err != nil {
+			return err
+		}
+		if err := indexItem(ctx, tx, id, title, author, summary, html); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // CountItems counts items matching q, ignoring Limit and Offset.
