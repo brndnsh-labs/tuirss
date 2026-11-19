@@ -7,9 +7,9 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	"tuirss/internal/htmltext"
-	"tuirss/internal/render"
-	"tuirss/internal/store"
+	"github.com/brndnsh-labs/tuirss/internal/htmltext"
+	"github.com/brndnsh-labs/tuirss/internal/render"
+	"github.com/brndnsh-labs/tuirss/internal/store"
 )
 
 const (

@@ -10,10 +10,10 @@ import (
 	"sync"
 	"time"
 
-	"tuirss/internal/backend"
-	"tuirss/internal/config"
-	"tuirss/internal/secret"
-	"tuirss/internal/store"
+	"github.com/brndnsh-labs/tuirss/internal/backend"
+	"github.com/brndnsh-labs/tuirss/internal/config"
+	"github.com/brndnsh-labs/tuirss/internal/secret"
+	"github.com/brndnsh-labs/tuirss/internal/store"
 )
 
 const (

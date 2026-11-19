@@ -11,7 +11,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"tuirss/internal/store"
+	"github.com/brndnsh-labs/tuirss/internal/store"
 )
 
 type fakeExtractor struct {

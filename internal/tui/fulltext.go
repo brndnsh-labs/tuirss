@@ -6,8 +6,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"tuirss/internal/htmltext"
-	"tuirss/internal/store"
+	"github.com/brndnsh-labs/tuirss/internal/htmltext"
+	"github.com/brndnsh-labs/tuirss/internal/store"
 )
 
 type fullTextMsg struct {

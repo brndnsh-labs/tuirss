@@ -11,13 +11,13 @@ import (
 	"os/signal"
 	"syscall"
 
-	"tuirss/internal/backend"
-	"tuirss/internal/config"
-	"tuirss/internal/freshrss"
-	"tuirss/internal/local"
-	"tuirss/internal/logx"
-	"tuirss/internal/paths"
-	"tuirss/internal/store"
+	"github.com/brndnsh-labs/tuirss/internal/backend"
+	"github.com/brndnsh-labs/tuirss/internal/config"
+	"github.com/brndnsh-labs/tuirss/internal/freshrss"
+	"github.com/brndnsh-labs/tuirss/internal/local"
+	"github.com/brndnsh-labs/tuirss/internal/logx"
+	"github.com/brndnsh-labs/tuirss/internal/paths"
+	"github.com/brndnsh-labs/tuirss/internal/store"
 )
 
 type app struct {

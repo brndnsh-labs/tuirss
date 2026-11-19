@@ -12,8 +12,8 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 
-	"tuirss/internal/backend"
-	"tuirss/internal/store"
+	"github.com/brndnsh-labs/tuirss/internal/backend"
+	"github.com/brndnsh-labs/tuirss/internal/store"
 )
 
 type Options struct {

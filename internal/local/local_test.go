@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"tuirss/internal/backend"
-	"tuirss/internal/opml"
-	"tuirss/internal/store"
+	"github.com/brndnsh-labs/tuirss/internal/backend"
+	"github.com/brndnsh-labs/tuirss/internal/opml"
+	"github.com/brndnsh-labs/tuirss/internal/store"
 )
 
 const rssV1 = `<?xml version="1.0"?>

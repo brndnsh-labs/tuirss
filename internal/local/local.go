@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"tuirss/internal/backend"
-	"tuirss/internal/opml"
-	"tuirss/internal/store"
+	"github.com/brndnsh-labs/tuirss/internal/backend"
+	"github.com/brndnsh-labs/tuirss/internal/opml"
+	"github.com/brndnsh-labs/tuirss/internal/store"
 )
 
 const AccountID = "local"

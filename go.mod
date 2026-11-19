@@ -1,4 +1,4 @@
-module tuirss
+module github.com/brndnsh-labs/tuirss
 
 go 1.27.3
 

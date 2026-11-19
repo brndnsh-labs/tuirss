@@ -11,13 +11,13 @@
       renderer, `v` open in browser, `?` help, `/` search (SQLite FTS5)
 - [x] **M3 — FreshRSS:** Google Reader API (`/api/greader.php`), `tuirss login`
       with keyring / `password_command`, incremental sync, outbox for offline
-      actions with retry — *needs a live test against rss.brndn.zip*
+      actions with retry
 - [ ] **M4 — Polish:**
   - [x] theme follows the terminal's palette (so Omarchy themes apply)
   - [x] sync spinner, reading-time estimates
   - [x] full-text extraction for summary-only feeds (`e` / `E`)
   - [x] inline sixel images in the reader (pulled forward from post-v1)
-  - [x] live test against rss.brndn.zip
+  - [x] tested against a live FreshRSS server
   - [ ] unread sparklines
 
 ## After v1

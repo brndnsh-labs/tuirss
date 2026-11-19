@@ -9,8 +9,8 @@ import (
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 
-	"tuirss/internal/images"
-	"tuirss/internal/render"
+	"github.com/brndnsh-labs/tuirss/internal/images"
+	"github.com/brndnsh-labs/tuirss/internal/render"
 )
 
 // Inline images are drawn as sixel graphics outside Bubble Tea's renderer,

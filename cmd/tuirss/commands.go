@@ -12,13 +12,13 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"tuirss/internal/backend"
-	"tuirss/internal/format"
-	"tuirss/internal/fulltext"
-	"tuirss/internal/local"
-	"tuirss/internal/opml"
-	"tuirss/internal/store"
-	"tuirss/internal/tui"
+	"github.com/brndnsh-labs/tuirss/internal/backend"
+	"github.com/brndnsh-labs/tuirss/internal/format"
+	"github.com/brndnsh-labs/tuirss/internal/fulltext"
+	"github.com/brndnsh-labs/tuirss/internal/local"
+	"github.com/brndnsh-labs/tuirss/internal/opml"
+	"github.com/brndnsh-labs/tuirss/internal/store"
+	"github.com/brndnsh-labs/tuirss/internal/tui"
 )
 
 // parseArgs parses flags that may appear before or after positional arguments.

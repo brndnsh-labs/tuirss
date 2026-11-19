@@ -17,7 +17,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"tuirss/internal/htmltext"
+	"github.com/brndnsh-labs/tuirss/internal/htmltext"
 )
 
 //go:embed migrations/*.sql

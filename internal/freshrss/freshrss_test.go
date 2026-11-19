@@ -17,9 +17,9 @@ import (
 
 	"github.com/zalando/go-keyring"
 
-	"tuirss/internal/backend"
-	"tuirss/internal/config"
-	"tuirss/internal/store"
+	"github.com/brndnsh-labs/tuirss/internal/backend"
+	"github.com/brndnsh-labs/tuirss/internal/config"
+	"github.com/brndnsh-labs/tuirss/internal/store"
 )
 
 // fakeServer is a small in-memory FreshRSS Google Reader API.

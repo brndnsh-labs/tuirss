@@ -11,7 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	uv "github.com/charmbracelet/ultraviolet"
 
-	"tuirss/internal/store"
+	"github.com/brndnsh-labs/tuirss/internal/store"
 )
 
 func solid(w, h int) image.Image {

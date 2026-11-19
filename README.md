@@ -3,12 +3,15 @@
 A terminal RSS reader for local feeds and FreshRSS, with Google Reader-style
 keyboard navigation. See [ROADMAP.md](ROADMAP.md) for what's next.
 
-## Build
+## Install
 
 ```sh
-go build -o bin/tuirss ./cmd/tuirss
-go test ./...
+go install github.com/brndnsh-labs/tuirss/cmd/tuirss@latest
 ```
+
+Or from a clone: `go build -o bin/tuirss ./cmd/tuirss` (and `go test ./...`).
+Requires Go 1.27+. Passwords are stored with the Secret Service API
+(gnome-keyring, KeePassXC, …) unless you set `password_command`.
 
 ## FreshRSS
 
@@ -18,8 +21,8 @@ go test ./...
 
    ```toml
    [[freshrss]]
-   name = "rss.brndn.zip"            # shown in the sidebar
-   url = "https://rss.brndn.zip"
+   name = "Home"                       # shown in the sidebar
+   url = "https://freshrss.example.com"
    username = "your-freshrss-username"
    # password_command = "pass show freshrss"   # optional; keyring otherwise
    ```
@@ -81,3 +84,7 @@ internal/format/    display helpers shared by CLI and TUI
 ```
 
 Backends sync remote state into the store; the UI never waits on the network.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

@@ -9,7 +9,7 @@ import (
 
 	"github.com/mmcdole/gofeed"
 
-	"tuirss/internal/store"
+	"github.com/brndnsh-labs/tuirss/internal/store"
 )
 
 // clockSkew is how far in the future a date may be before we treat it as bogus.

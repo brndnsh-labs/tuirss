@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	userAgent = "tuirss/0.1 (terminal RSS reader)"
+	userAgent = "github.com/brndnsh-labs/tuirss/0.1 (terminal RSS reader)"
 	maxBytes  = 10 << 20 // 10 MiB
 )
 

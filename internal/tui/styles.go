@@ -3,7 +3,7 @@ package tui
 import (
 	"charm.land/lipgloss/v2"
 
-	"tuirss/internal/render"
+	"github.com/brndnsh-labs/tuirss/internal/render"
 )
 
 // Colors are the terminal's own ANSI palette, so tuirss follows whatever theme

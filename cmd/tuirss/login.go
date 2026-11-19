@@ -10,8 +10,8 @@ import (
 
 	"golang.org/x/term"
 
-	"tuirss/internal/config"
-	"tuirss/internal/freshrss"
+	"github.com/brndnsh-labs/tuirss/internal/config"
+	"github.com/brndnsh-labs/tuirss/internal/freshrss"
 )
 
 func (a *app) freshrssConfig(args []string, verb string) (config.FreshRSS, error) {

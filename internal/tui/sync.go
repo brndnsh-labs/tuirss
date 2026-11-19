@@ -8,7 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"tuirss/internal/backend"
+	"github.com/brndnsh-labs/tuirss/internal/backend"
 )
 
 type (

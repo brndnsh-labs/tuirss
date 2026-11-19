@@ -22,7 +22,7 @@ const (
 	readingList  = "user/-/state/com.google/reading-list"
 	labelPrefix  = "user/-/label/"
 	longIDPrefix = "tag:google.com,2005:reader/item/"
-	userAgent    = "tuirss/0.1 (terminal RSS reader)"
+	userAgent    = "github.com/brndnsh-labs/tuirss/0.1 (terminal RSS reader)"
 )
 
 // ErrBadLogin means the server rejected the username or API password.

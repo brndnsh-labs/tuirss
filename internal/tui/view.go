@@ -9,9 +9,9 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"tuirss/internal/format"
-	"tuirss/internal/htmltext"
-	"tuirss/internal/store"
+	"github.com/brndnsh-labs/tuirss/internal/format"
+	"github.com/brndnsh-labs/tuirss/internal/htmltext"
+	"github.com/brndnsh-labs/tuirss/internal/store"
 )
 
 type layout struct {
