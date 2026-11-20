@@ -49,6 +49,7 @@ func init() {
 		{"items", "[-account NAME] [-unread] [-starred] [-feed ID] [-n N]", "list recent items", cmdItems},
 		{"login", "[NAME]", "save and check a FreshRSS API password", cmdLogin},
 		{"logout", "NAME", "forget a saved FreshRSS API password", cmdLogout},
+		{"version", "", "show which build this is", nil},
 	}
 }
 
@@ -67,6 +68,7 @@ func run(args []string) int {
 	global.SetOutput(io.Discard)
 	cfgPath := global.String("config", paths.ConfigFile(), "")
 	dbPath := global.String("db", paths.DBFile(), "")
+	showVersion := global.Bool("version", false, "")
 	if err := global.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			usage(os.Stdout)
@@ -77,6 +79,10 @@ func run(args []string) int {
 		return 2
 	}
 	rest := global.Args()
+	if *showVersion || len(rest) > 0 && rest[0] == "version" {
+		fmt.Println(currentBuild())
+		return 0
+	}
 	if len(rest) > 0 && (rest[0] == "help" || rest[0] == "-h" || rest[0] == "--help") {
 		usage(os.Stdout)
 		return 0

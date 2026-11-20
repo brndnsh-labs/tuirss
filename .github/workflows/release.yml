@@ -1,0 +1,34 @@
+# Release: runs when you push a version tag (git tag v0.1.0 && git push origin v0.1.0).
+# It tests, then GoReleaser builds every platform and publishes a GitHub
+# Release with the downloads, checksums and a changelog.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # needed to create the GitHub Release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the changelog is built from the commits since the last tag
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        run: go test -race ./...
+
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          # Provided automatically by GitHub for this run; nothing to set up.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

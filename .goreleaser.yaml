@@ -1,0 +1,39 @@
+# GoReleaser turns a version tag into a GitHub Release with ready-to-run
+# downloads. Docs: https://goreleaser.com
+#
+# Try it locally without publishing:  goreleaser release --snapshot --clean
+# (the results land in dist/).
+version: 2
+project_name: tuirss
+
+builds:
+  - main: ./cmd/tuirss
+    binary: tuirss
+    env:
+      - CGO_ENABLED=0 # pure Go, so every target cross-compiles from one machine
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath # don't embed the build machine's paths
+    # Stamp the version into the binary; `tuirss version` prints these.
+    ldflags:
+      - -s -w -X main.version={{ .Version }} -X main.commit={{ .Commit }} -X main.date={{ .CommitDate }}
+    # Same commit → byte-for-byte the same binary (reproducible builds).
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - formats: [tar.gz]
+    # e.g. tuirss_0.1.0_linux_amd64.tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^Merge "

@@ -5,12 +5,19 @@ keyboard navigation. See [ROADMAP.md](ROADMAP.md) for what's next.
 
 ## Install
 
+**Download:** grab the archive for your system from
+[Releases](https://github.com/brndnsh-labs/tuirss/releases) (Linux and macOS,
+x86-64 and ARM), unpack it, and put `tuirss` somewhere on your `PATH`.
+
+**With Go 1.27+:**
+
 ```sh
 go install github.com/brndnsh-labs/tuirss/cmd/tuirss@latest
 ```
 
-Or from a clone: `go build -o bin/tuirss ./cmd/tuirss` (and `go test ./...`).
-Requires Go 1.27+. Passwords are stored with the Secret Service API
+**From a clone:** `go build -o bin/tuirss ./cmd/tuirss` (and `go test ./...`).
+`tuirss version` shows which build you're running. See
+[RELEASING.md](RELEASING.md) for how releases are made. Passwords are stored with the Secret Service API
 (gnome-keyring, KeePassXC, …) unless you set `password_command`.
 
 ## FreshRSS

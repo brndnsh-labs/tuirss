@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"os/exec"
+	"runtime"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -355,8 +356,12 @@ func (m *Model) openInBrowser() {
 		return
 	}
 	m.flash("opening in browser…")
+	opener := "xdg-open"
+	if runtime.GOOS == "darwin" {
+		opener = "open"
+	}
 	m.do(func() tea.Msg {
-		cmd := exec.Command("xdg-open", u)
+		cmd := exec.Command(opener, u)
 		if err := cmd.Start(); err != nil {
 			return browserMsg{fmt.Errorf("opening browser: %w", err)}
 		}
