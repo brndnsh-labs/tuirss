@@ -24,6 +24,7 @@ type styles struct {
 	sep                                lipgloss.Style
 	sideHead, sideItem, sideEmpty      lipgloss.Style
 	sideSel, sideCount, sideErr        lipgloss.Style
+	sparkBar, sparkBase                lipgloss.Style
 	acct, acctActive, acctMark         lipgloss.Style
 	bar, dot, star, fresh, freshTitle  lipgloss.Style
 	titleUnread, titleRead, titleCur   lipgloss.Style
@@ -50,6 +51,8 @@ func newStyles() styles {
 		sideSel:   n().Foreground(cAccent).Bold(true),
 		sideCount: n().Foreground(cMuted),
 		sideErr:   n().Foreground(cErr),
+		sparkBar:  n().Foreground(cAccent),
+		sparkBase: n().Foreground(cMuted),
 
 		acct:       n().Foreground(cMuted),
 		acctActive: n().Bold(true),

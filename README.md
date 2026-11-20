@@ -55,6 +55,11 @@ they show as `▣` placeholders. Set `TUIRSS_IMAGES=0` to turn them off.
 you're reading pulse briefly as the unread counts count up. Set
 `animations = false` in the config to turn both off.
 
+**Unread sparklines** show when your unread articles were published, one bar
+per day with today on the right: the last 7 days beside each feed and folder
+(when the sidebar is wide enough), and the last 14 for the current view in
+the header. A backlog that's all on the left is old news.
+
 ## Command line
 
 ```sh

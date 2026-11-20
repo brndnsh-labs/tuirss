@@ -54,6 +54,7 @@ type sideEntry struct {
 	depth     int
 	hasErr    bool
 	collapsed bool
+	spark     []int // unread articles per day, oldest first (see spark.go)
 }
 
 func (e sideEntry) key() string { return fmt.Sprintf("%d:%d", e.kind, e.id) }
@@ -115,6 +116,7 @@ type Model struct {
 	scroll      scrollAnim
 	fresh       map[int64]time.Time // items that just arrived → when
 	tweens      map[string]tween    // unread counts counting up
+	history     map[int64][]int     // feed id → unread per day, for sparklines
 	syncMaxID   int64               // highest item id when the sync started
 	fullMode    map[int64]bool      // per-article e overrides for this session
 	fetching    map[int64]bool      // full-text extractions in flight
@@ -278,6 +280,8 @@ func (m *Model) reloadSidebar() {
 	m.starred, _ = m.store.CountItems(m.ctx, store.ItemQuery{AccountID: a.ID, StarredOnly: true})
 	key := m.view.key()
 	m.side = buildSidebar(feeds, m.starred, m.unreadByAcct[a.ID], m.collapsed)
+	m.loadHistory(a.ID)
+	m.addSparks(m.side)
 	m.sideCursor = clamp(m.sideCursor, 0, len(m.side)-1)
 	for i, e := range m.side {
 		if e.key() == key {

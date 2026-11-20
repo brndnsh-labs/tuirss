@@ -377,3 +377,26 @@ func (s *Store) UnreadByAccount(ctx context.Context) (map[string]int, error) {
 	}
 	return out, rows.Err()
 }
+
+// UnreadSince returns, for each feed in the account, the publish times of its
+// unread items published at or after since. The TUI buckets them by day for
+// its unread sparklines.
+func (s *Store) UnreadSince(ctx context.Context, accountID string, since time.Time) (map[int64][]time.Time, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT i.feed_id, i.published_at FROM items i JOIN feeds f ON f.id = i.feed_id
+		WHERE f.account_id = ? AND i.is_read = 0 AND i.published_at >= ?`,
+		accountID, since.Unix())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64][]time.Time{}
+	for rows.Next() {
+		var feed, pub int64
+		if err := rows.Scan(&feed, &pub); err != nil {
+			return nil, err
+		}
+		out[feed] = append(out[feed], time.Unix(pub, 0))
+	}
+	return out, rows.Err()
+}

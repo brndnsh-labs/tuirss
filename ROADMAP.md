@@ -12,14 +12,14 @@
 - [x] **M3 — FreshRSS:** Google Reader API (`/api/greader.php`), `tuirss login`
       with keyring / `password_command`, incremental sync, outbox for offline
       actions with retry
-- [ ] **M4 — Polish:**
+- [x] **M4 — Polish:**
   - [x] theme follows the terminal's palette (so Omarchy themes apply)
   - [x] sync spinner, reading-time estimates
   - [x] full-text extraction for summary-only feeds (`e` / `E`)
   - [x] inline sixel images in the reader (pulled forward from post-v1)
   - [x] tested against a live FreshRSS server
   - [x] smooth scrolling and new-article highlights (`animations = false` to disable)
-  - [ ] unread sparklines
+  - [x] unread sparklines (sidebar and header)
 
 ## After v1
 

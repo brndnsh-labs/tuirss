@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -184,7 +185,16 @@ func (m *Model) viewHeader(w int) string {
 	default:
 		right = fmt.Sprintf("all · %d articles", len(m.items))
 	}
-	return spread(left, m.st.headerRight.Render(right+" "), w)
+	right = m.st.headerRight.Render(right + " ")
+	// The current view's unread sparkline, when there's room for it.
+	if m.query == "" && m.view.kind != sideStarred && slices.ContainsFunc(m.view.spark, func(n int) bool { return n > 0 }) {
+		spark := m.st.headerRight.Render(fmt.Sprintf("%dd ", sparkDays)) +
+			sparkline(m.view.spark, sparkDays, m.st.sparkBar, m.st.sparkBase) + "  "
+		if ansi.StringWidth(left)+ansi.StringWidth(spark+right)+2 <= w {
+			right = spark + right
+		}
+	}
+	return spread(left, right, w)
 }
 
 func (m *Model) viewStatus(w int) string {
@@ -276,9 +286,22 @@ func (m *Model) viewSidebar(w, h int) []string {
 	}
 	m.sideOffset = clamp(m.sideOffset, 0, max(len(m.side)-rows, 0))
 
+	// One column for counts, sized to the widest visible one, so the
+	// sparklines to its left line up.
+	end := min(len(m.side), m.sideOffset+rows)
+	countW := 0
+	for _, e := range m.side[m.sideOffset:end] {
+		if n := m.count("s:"+e.key(), e.unread); n > 0 {
+			countW = max(countW, len(fmt.Sprint(n)))
+		}
+	}
+	// bar + deepest indent + icon + space, then the title, the sparkline and
+	// the count, each after a space
+	spark := w-(1+2+2)-sideSparkMinTitle-(1+sideSparkDays)-(1+countW)-1 >= 0
+
 	lines := top
-	for i := m.sideOffset; i < len(m.side) && i < m.sideOffset+rows; i++ {
-		lines = append(lines, m.sideRow(m.side[i], i == m.sideCursor, w))
+	for i := m.sideOffset; i < end; i++ {
+		lines = append(lines, m.sideRow(m.side[i], i == m.sideCursor, w, countW, spark))
 	}
 	if len(m.feeds) == 0 && len(m.accounts) > 0 {
 		lines = append(lines, "", m.st.sideEmpty.Render(" no feeds yet"))
@@ -286,7 +309,7 @@ func (m *Model) viewSidebar(w, h int) []string {
 	return block(strings.Join(lines, "\n"), w, h)
 }
 
-func (m *Model) sideRow(e sideEntry, selected bool, w int) string {
+func (m *Model) sideRow(e sideEntry, selected bool, w, countW int, spark bool) string {
 	var icon string
 	switch e.kind {
 	case sideStarred:
@@ -321,8 +344,15 @@ func (m *Model) sideRow(e sideEntry, selected bool, w int) string {
 		count = m.st.sideCount.Render(fmt.Sprint(n))
 	}
 	left := bar + indent + icon + " " + title
-	cw := ansi.StringWidth(count)
-	return fit(left, w-cw-2) + " " + count + " "
+	right := strings.Repeat(" ", max(countW-ansi.StringWidth(count), 0)) + count
+	if spark {
+		line := strings.Repeat(" ", sideSparkDays)
+		if e.kind != sideStarred {
+			line = sparkline(e.spark, sideSparkDays, m.st.sparkBar, m.st.sparkBase)
+		}
+		right = line + " " + right
+	}
+	return fit(left, w-ansi.StringWidth(right)-2) + " " + right + " "
 }
 
 // --- item list -------------------------------------------------------------

@@ -361,3 +361,33 @@ func TestFullContent(t *testing.T) {
 		t.Error("feed should report full text on")
 	}
 }
+
+func TestUnreadSince(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	f := seed(t, s)
+	now := time.Now().Truncate(time.Second)
+	if _, err := s.UpsertItems(ctx, f.ID, []Item{
+		{GUID: "new", PublishedAt: now.Add(-time.Hour)},
+		{GUID: "read", PublishedAt: now.Add(-2 * time.Hour)},
+		{GUID: "old", PublishedAt: now.Add(-30 * 24 * time.Hour)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	items, _ := s.Items(ctx, ItemQuery{})
+	for _, it := range items {
+		if it.GUID == "read" {
+			s.SetRead(ctx, it.ID, true)
+		}
+	}
+	got, err := s.UnreadSince(ctx, "local", now.Add(-14*24*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || len(got[f.ID]) != 1 || !got[f.ID][0].Equal(now.Add(-time.Hour)) {
+		t.Errorf("UnreadSince = %v", got)
+	}
+	if other, _ := s.UnreadSince(ctx, "freshrss:x", time.Time{}); len(other) != 0 {
+		t.Errorf("other account = %v", other)
+	}
+}
